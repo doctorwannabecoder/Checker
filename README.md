@@ -64,8 +64,11 @@ estão assinaladas na interface como **«Precisa de confirmação»**.
 
 | Código | Significado |
 |--------|-------------|
+| `101.001` | **Remuneração base** (trabalho regular contratado / RW) |
 | `700.001` | ER · dia útil · diurno · **1ª hora** |
 | `700.002` | ER · dia útil · diurno · **horas seguintes** |
+| `700.003` | ER · dia útil · **noturno · 1ª hora** |
+| `700.004` | ER · dia útil · **noturno · seguintes** |
 | `700.006` | ER · **Sáb > 13h (DDC)** · diurno · seguintes |
 | `700.009` | ER · **Domingo (DDS)** · diurno · 1ª hora |
 | `700.010` | ER · Domingo (DDS) · diurno · seguintes |
@@ -75,9 +78,9 @@ Regra **1ª / Seguintes**: a **1ª hora** de cada turno ER bilha sob o código
 `…1ª`; as restantes horas sob o código `…Seg`. (`firstHourMinutes = 60`.)
 
 **Em falta** (a app calcula e marca a vermelho **«EM FALTA»** — falta o número
-do código real): ER **noturno** dia útil, ER **Sábado 1ª hora**, ER **Sábado
-noturno**, ER **Domingo noturno**, **todos** os de **feriado**, TN de
-Sáb/Dom/feriado, e o código de **Prevenção**.
+do código real): ER **Sábado 1ª hora**, ER **Sábado noturno**, ER **Domingo
+noturno**, **todos** os de **feriado**, TN de Sáb/Dom/feriado, e o código de
+**Prevenção**.
 
 **Suposições** a confirmar com o RH / acordo coletivo:
 

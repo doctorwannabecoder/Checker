@@ -291,9 +291,9 @@ const PAYROLL_RULES = {
     // --- ER dia útil, diurno ---
     ER_DU_DIU_1:  {code:'700.001', desc:'ER · dia útil · diurno · 1ª hora',        isER:true, isTN:false, confirm:false, missing:false},
     ER_DU_DIU_S:  {code:'700.002', desc:'ER · dia útil · diurno · seguintes',      isER:true, isTN:false, confirm:false, missing:false},
-    // --- ER dia útil, noturno (EM FALTA — só temos o TN) ---
-    ER_DU_NOT_1:  {code:'?', desc:'ER · dia útil · noturno · 1ª hora',             isER:true, isTN:false, confirm:true, missing:true},
-    ER_DU_NOT_S:  {code:'?', desc:'ER · dia útil · noturno · seguintes',           isER:true, isTN:false, confirm:true, missing:true},
+    // --- ER dia útil, noturno ---
+    ER_DU_NOT_1:  {code:'700.003', desc:'ER · dia útil · noturno · 1ª hora',       isER:true, isTN:false, confirm:false, missing:false},
+    ER_DU_NOT_S:  {code:'700.004', desc:'ER · dia útil · noturno · seguintes',     isER:true, isTN:false, confirm:false, missing:false},
     // --- ER Sábado >13h (DDC), diurno ---
     ER_SAB_DIU_1: {code:'?', desc:'ER · Sáb>13h (DDC) · diurno · 1ª hora',         isER:true, isTN:false, confirm:true, missing:true},
     ER_SAB_DIU_S: {code:'700.006', desc:'ER · Sáb>13h (DDC) · diurno · seguintes', isER:true, isTN:false, confirm:false, missing:false},
@@ -315,7 +315,7 @@ const PAYROLL_RULES = {
     TN_DOM: {code:'?',       desc:'TN · Domingo · noturno',      isER:false, isTN:true, confirm:true,  missing:true},
     TN_FER: {code:'?',       desc:'TN · feriado · noturno',      isER:false, isTN:true, confirm:true,  missing:true},
     // --- Outros ---
-    RW:   {code:'RW',   desc:'Trabalho Regular (contratado)', isER:false, isTN:false, confirm:true, missing:false},
+    RW:   {code:'101.001', desc:'Remuneração base (trabalho regular contratado)', isER:false, isTN:false, confirm:false, missing:false},
     PREV: {code:'PREV', desc:'Prevenção',                    isER:false, isTN:false, confirm:true, missing:true}
   }
 };
