@@ -6,64 +6,69 @@
 <title>Verificador de ER / TN — Autoconferência de Horas Pagas</title>
 <!--
   =========================================================================
-  VERIFICADOR DE ER / TN  —  ferramenta de autoconferência (single file)
+  VERIFICADOR DE ER / TN  —  ferramenta de autoconferência (ficheiro único)
   =========================================================================
-  Objetivo: permitir que o trabalhador confirme se as horas de ER (Escala de
-  Recurso / trabalho suplementar) e TN (Trabalho Noturno) foram corretamente
-  pagas, comparando o plano mensal com o recibo de vencimento.
+  Objetivo: o trabalhador confere se as horas de ER (Escala de Recurso /
+  trabalho suplementar) e TN (Trabalho Noturno) foram corretamente pagas,
+  comparando o plano mensal com o recibo de vencimento.
 
   ORIGEM DAS REGRAS
   -----------------
-  O repositório de origem (scheduler / index.html) é um GERADOR DE ESCALAS.
-  Contém lógica de calendário, feriados e janelas de turno — mas NÃO contém
-  códigos de pagamento nem regras salariais. Por isso:
+  O repositório de origem (scheduler) é um GERADOR DE ESCALAS: tem lógica de
+  calendário/feriados/janelas de turno, mas NÃO tem códigos nem regras de
+  pagamento. Por isso:
+    * Reutilizou-se VERBATIM a lógica de datas/feriados do scheduler:
+        iso, parseISO, addDays, easterSunday, holidaysForYear, isHoliday,
+        holidayName, dayKind, isoWeekKey, PT_HOLIDAYS_FIXED.
+    * Todas as regras de PAGAMENTO vivem em PAYROLL_RULES / CODE_MATRIX /
+      SHIFT_CODE_MAP (topo do <script>). O que não foi confirmado está com
+      `confirm:true` / `missing:true` e aparece assinalado na UI.
 
-    * Reutilizou-se VERBATIM a lógica de datas/feriados/turnos do repo:
-        iso(), parseISO(), addDays(), easterSunday(), holidaysForYear(),
-        isHoliday(), holidayName(), dayKind(), shiftWindow(),
-        PT_HOLIDAYS_FIXED, e as janelas dia=08-20 / noite=20-08 / 24h=08-08.
-    * Todas as regras de PAGAMENTO (códigos, janela legal de noturno, limites)
-      vivem em PAYROLL_RULES, no topo do <script>, marcadas com
-      "needsConfirmation" e assinaladas na UI como «Precisa de confirmação».
+  ENTRADA EM 3 PARTES (colar) — ver PARTE D:
+    Parte 1 = escala-base (nome + 1 código por dia; 1.º código = ÚLTIMO dia
+              do mês anterior; serve de "régua" de dias).
+    Parte 2 = turnos ER (esparso).
+    Parte 3 = prevenções (esparso).
+    Como o texto vem de PDF/texto (só espaços, sem tabulações), as Partes 2/3
+    NÃO alinham por posição. Solução: prefixar cada entrada com o número do
+    dia (ex.: "3 20:00-08:00"). Tudo cai numa grelha editável por dia.
 
-  Para atualizar códigos/regras de pagamento depois: editar apenas o objeto
-  PAYROLL_RULES. A UI e os cálculos leem tudo a partir daí.
+  SEMANA COMPLETA: para ER/TN semanais, o cálculo estende cada semana de
+  fronteira (Seg–Dom). Dias úteis sem turno/descanso são pré-preenchidos como
+  Trabalho Regular (RW).
   =========================================================================
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
-  /* Tema reutilizado do repositório de origem (index.html) para consistência visual */
   :root{
     --bg:#0f172a; --panel:#111827; --panel2:#1f2937; --line:#334155;
     --text:#e5e7eb; --muted:#94a3b8; --accent:#38bdf8; --accent2:#22d3ee;
     --ok:#22c55e; --warn:#f59e0b; --err:#ef4444;
-    --day:#0ea5e9; --night:#7c3aed; --h24:#f43f5e;
+    --day:#0ea5e9; --night:#7c3aed; --h24:#f43f5e; --prev:#10b981;
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--text);
     font-family:'Plus Jakarta Sans',system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
     font-size:14px;letter-spacing:-0.005em}
   input,select,textarea,button{font-family:inherit}
-  table, .stat-num, .badge, .pill, input[type=date], input[type=number], .mono{
-    font-variant-numeric:tabular-nums}
+  table, .badge, .pill, input[type=date], input[type=number], .mono{font-variant-numeric:tabular-nums}
   code, kbd, .mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace}
   header{padding:14px 20px;background:#0b1220;border-bottom:1px solid var(--line);
     display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   header h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-0.02em}
   header .sub{font-size:12px;color:var(--muted)}
-  main{max-width:1280px;margin:0 auto;padding:18px}
+  main{max-width:1320px;margin:0 auto;padding:18px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
   .card h2{margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--accent2);letter-spacing:-0.01em}
-  .card h2 .hint{font-weight:500;color:var(--muted);font-size:12px;margin-left:8px}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
   label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500}
   label.inline{flex-direction:row;align-items:center;gap:7px;color:var(--text);font-size:13px}
   input[type=text],input[type=number],input[type=date],input[type=time],select,textarea{
     background:var(--panel2);color:var(--text);border:1px solid var(--line);
     border-radius:6px;padding:7px 9px;font-size:13px}
-  textarea{width:100%;min-height:150px;resize:vertical;line-height:1.5}
+  textarea{width:100%;min-height:90px;resize:vertical;line-height:1.5;font-family:'JetBrains Mono',monospace;font-size:12px}
   input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
   button.btn{background:var(--accent);color:#06283b;border:0;padding:9px 14px;border-radius:8px;
     cursor:pointer;font-weight:700;font-size:13px}
@@ -71,10 +76,10 @@
   button.btn.warn{background:var(--warn);color:#1c1300}
   button.btn:disabled{opacity:.4;cursor:not-allowed}
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:middle}
-  th{background:#0b1220;font-weight:600;color:var(--muted);position:sticky;top:0}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:middle}
+  th{background:#0b1220;font-weight:600;color:var(--muted);position:sticky;top:0;z-index:1}
   tbody tr:hover{background:#172136}
-  td input[type=time],td input[type=number]{padding:4px 6px;width:100%;min-width:78px}
+  td input[type=time],td input[type=number],td input[type=text]{padding:4px 6px;width:100%;min-width:70px}
   td.center,th.center{text-align:center}
   td.num,th.num{text-align:right}
   .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
@@ -84,8 +89,8 @@
   .pane{display:none} .pane.active{display:block}
   .badge{font-size:11px;padding:2px 7px;border-radius:6px;background:#0b1220;border:1px solid var(--line);color:var(--muted)}
   .badge.code{background:#0b2233;border-color:var(--accent);color:var(--accent2);font-weight:700}
-  .badge.tn{background:#2a1840;border-color:var(--night);color:#c4b5fd}
   .badge.confirm{background:#3a2a08;border-color:var(--warn);color:#fde68a;font-weight:700}
+  .badge.missing{background:#3a0d0d;border-color:var(--err);color:#fecaca;font-weight:700}
   .alert{padding:9px 12px;border-radius:8px;margin-bottom:8px;font-size:13px;border:1px solid}
   .alert.warn{background:#3a2a08;border-color:var(--warn);color:#fde68a}
   .alert.err{background:#3a0d0d;border-color:var(--err);color:#fecaca}
@@ -93,6 +98,8 @@
   .alert.info{background:#0b2233;border-color:var(--accent);color:#bae6fd}
   .small{font-size:12px;color:var(--muted)}
   .muted{color:var(--muted)}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  @media(max-width:900px){.grid3{grid-template-columns:1fr}}
   .shiftcard{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--panel2)}
   .shiftcard.fds{border-left:4px solid var(--h24)}
   .shiftcard.weekday{border-left:4px solid var(--day)}
@@ -105,14 +112,14 @@
   .pill.er{background:var(--day);color:#06283b}
   .pill.tn{background:var(--night);color:#fff}
   .pill.reg{background:#475569;color:#fff}
-  details summary{cursor:pointer;color:var(--accent2);font-weight:600;font-size:13px}
-  .rules-table td{font-size:12px}
+  .pill.prev{background:var(--prev);color:#06283b}
+  tr.r-off{opacity:.55}
+  tr.r-fds td:first-child{color:var(--h24)}
+  tr.r-extra{background:#10192e}
   @media print{
     header,.tabs,.toolbar,.noprint{display:none!important}
-    body{background:#fff;color:#000}
-    .card{border-color:#ccc;background:#fff}
-    th{background:#eee;color:#000}
-    .card h2{color:#000}
+    body{background:#fff;color:#000}.card{border-color:#ccc;background:#fff}
+    th{background:#eee;color:#000}.card h2{color:#000}
   }
 </style>
 </head>
@@ -125,94 +132,97 @@
 </header>
 
 <main>
-
-  <!-- =====================================================================
-       AVISO DE REGRAS POR CONFIRMAR (preenchido dinamicamente)
-       ===================================================================== -->
   <div id="confirmBanner"></div>
 
-  <!-- =====================================================================
-       SECÇÃO TOPO: Mês/Ano + horas contratadas semanais
-       ===================================================================== -->
+  <!-- 1 · período + contrato -->
   <div class="card">
     <h2>1 · Período e contrato</h2>
     <div class="row">
-      <label>Mês
-        <select id="selMonth"></select>
-      </label>
-      <label>Ano
-        <input type="number" id="selYear" min="2000" max="2100" step="1" style="width:100px"/>
-      </label>
-      <label>Tempo de trabalho semanal contratado
-        <select id="selWeekly"></select>
-      </label>
-      <label class="inline" style="margin-bottom:6px">
-        <span class="small" id="dailyContractInfo"></span>
-      </label>
+      <label>Mês <select id="selMonth"></select></label>
+      <label>Ano <input type="number" id="selYear" min="2000" max="2100" step="1" style="width:100px"/></label>
+      <label>Tempo de trabalho semanal contratado <select id="selWeekly"></select></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small" id="dailyContractInfo"></span></label>
       <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
     </div>
     <p class="small">As horas semanais (30–45h) definem a base diária contratada
-      (<span class="mono" id="weeklyHint">35h → 7h/dia</span>) usada para separar horas
-      contratadas de horas ER, e para validar limites diários/semanais.</p>
+      (<span class="mono" id="weeklyHint"></span>) usada para o Trabalho Regular e para validar limites semanais.
+      O cálculo de ER/TN considera <b>semanas completas</b> (estende a Seg–Dom nas fronteiras do mês).</p>
   </div>
 
-  <!-- =====================================================================
-       SELETOR DE MODO DE ENTRADA
-       ===================================================================== -->
+  <!-- 2 · entrada -->
   <div class="card">
     <h2>2 · Entrada do plano mensal</h2>
     <div class="tabs">
-      <button id="tabManual" class="active" onclick="switchInputTab('manual')">✍️ Inserção manual</button>
-      <button id="tabPaste" onclick="switchInputTab('paste')">📋 Colar plano mensal</button>
+      <button id="tabManual" onclick="switchInputTab('manual')">✍️ Inserção manual</button>
+      <button id="tabPaste" class="active" onclick="switchInputTab('paste')">📋 Colar (3 partes)</button>
     </div>
 
-    <!-- MODO MANUAL: editor por dia -->
-    <div id="paneManual" class="pane active">
-      <p class="small">Para cada dia, marque o que se aplica e indique as horas. Deixe em branco os dias de folga.
-        <b>RW</b> = trabalho regular · <b>ER</b> = escala de recurso · <b>TN</b> = trabalho noturno ·
-        <b>Sob.</b> = ER e TN sobrepõem-se.</p>
-      <div style="overflow-x:auto;max-height:560px;overflow-y:auto">
+    <!-- PASTE: 3 partes -->
+    <div id="panePaste" class="pane active">
+      <div class="grid3">
+        <div>
+          <label>Parte 1 — Escala-base (nome + 1 código/dia)
+            <textarea id="pastePart1" placeholder="Bruno Tiago Alves Carvalho M256 Fr D F M256 ..."></textarea>
+          </label>
+          <p class="small">1.º código = <b>último dia do mês anterior</b>; seguem-se os dias do mês.
+            Códigos de folga/descanso/férias (ex.: <span class="mono">D F Fr</span>) não contam como trabalho;
+            dias úteis trabalhados sem ER ficam como Regular.</p>
+        </div>
+        <div>
+          <label>Parte 2 — Turnos ER (esparso)
+            <textarea id="pastePart2" placeholder="Prefixe o DIA:&#10;3 20:00-08:00&#10;7 08:00-20:00&#10;12 24h"></textarea>
+          </label>
+          <p class="small">Como o texto não tem tabulações, <b>prefixe cada linha com o número do dia</b>
+            para alinhar (ex.: <span class="mono">3 20:00-08:00</span>). Sem hora, defina depois na grelha.</p>
+        </div>
+        <div>
+          <label>Parte 3 — Prevenções (esparso)
+            <textarea id="pastePart3" placeholder="Prefixe o DIA:&#10;5 prev&#10;19 prev"></textarea>
+          </label>
+          <p class="small">Idem: <span class="mono">5 prev</span> ou <span class="mono">5 20:00-08:00</span>.</p>
+        </div>
+      </div>
+      <div class="toolbar" style="margin-top:10px">
+        <button class="btn" onclick="parseAndBuildGrid()">🔍 Analisar e montar grelha</button>
+        <button class="btn secondary" onclick="clearPasteBoxes()">Limpar</button>
+      </div>
+      <div id="parseWarnings"></div>
+    </div>
+
+    <!-- MANUAL -->
+    <div id="paneManual" class="pane">
+      <p class="small">Marque por dia. <b>RW</b>=regular · <b>ER</b>=escala de recurso · <b>Prev</b>=prevenção.
+        As horas TN são deduzidas automaticamente das horas noturnas.</p>
+      <div style="overflow:auto;max-height:560px">
         <table id="manualTable">
-          <thead>
-            <tr>
-              <th>Dia</th><th>Sem.</th>
-              <th class="center" title="Trabalho Regular">RW</th>
-              <th class="center" title="Escala de Recurso">ER</th>
-              <th class="center" title="Trabalho Noturno">TN</th>
-              <th class="center" title="ER e TN sobrepõem-se">Sob.</th>
-              <th>Tipo de turno</th>
-              <th>Início</th><th>Fim</th>
-              <th class="num" title="Horas diretas (opcional, se não usar início/fim)">Horas</th>
-            </tr>
-          </thead>
+          <thead><tr>
+            <th>Dia</th><th>Sem.</th><th class="center">RW</th><th class="center">ER</th><th class="center">Prev</th>
+            <th>Início</th><th>Fim</th><th class="num">Horas</th>
+          </tr></thead>
           <tbody></tbody>
         </table>
       </div>
     </div>
+  </div>
 
-    <!-- MODO COLAR: textarea + pré-visualização -->
-    <div id="panePaste" class="pane">
-      <p class="small">Cole o plano mensal (uma linha por dia). O parser tenta reconhecer
-        <span class="mono">data</span>, <span class="mono">tipo (ER/TN/Dia/Noite/24h/Normal)</span> e
-        <span class="mono">horas (08:00-20:00 ou 8-20)</span>. Exemplos aceites:</p>
-      <pre class="small mono" style="background:#0b1220;padding:10px;border-radius:8px;border:1px solid var(--line)">2026-06-03  ER Noite  20:00-08:00
-04/06  ER 24h  08-08
-7   ER Dia 08:00 20:00
-12  TN  22:00-07:00
-15  Normal 08:00-16:00</pre>
-      <textarea id="pasteBox" placeholder="Cole aqui o plano mensal…"></textarea>
-      <div class="toolbar" style="margin-top:10px">
-        <button class="btn" onclick="parseAndPreview()">🔍 Analisar e pré-visualizar</button>
-        <button class="btn secondary" onclick="document.getElementById('pasteBox').value=''">Limpar texto</button>
-      </div>
-      <div id="parseWarnings"></div>
-      <div id="previewArea"></div>
+  <!-- GRELHA EDITÁVEL (preview unificado) -->
+  <div id="gridCard" class="card" style="display:none">
+    <h2>3 · Grelha do mês (corrija antes de calcular)</h2>
+    <p class="small">Cada dia já alinhado. Edite ER/Prev/horas onde necessário. Linhas a cinzento = dias de
+      semanas de fronteira (fora do mês) incluídos só para o cálculo semanal.</p>
+    <div style="overflow:auto;max-height:600px">
+      <table id="gridTable">
+        <thead><tr>
+          <th>Data</th><th>Sem.</th><th>Escala (P1)</th>
+          <th class="center">RW</th><th class="center">ER</th><th class="center">Prev</th>
+          <th>Início</th><th>Fim</th><th class="num">Horas</th><th>Obs.</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
     </div>
   </div>
 
-  <!-- =====================================================================
-       CALCULAR
-       ===================================================================== -->
+  <!-- CALCULAR -->
   <div class="card">
     <div class="toolbar" style="margin-bottom:0">
       <button class="btn" style="font-size:15px;padding:11px 22px" onclick="calculate()">🧮 Calcular pagamento</button>
@@ -220,904 +230,657 @@
     </div>
   </div>
 
-  <!-- =====================================================================
-       VALIDAÇÃO / AVISOS
-       ===================================================================== -->
   <div id="validationCard" class="card" style="display:none">
-    <h2>⚠️ Validação e avisos</h2>
-    <div id="validationArea"></div>
+    <h2>⚠️ Validação e avisos</h2><div id="validationArea"></div>
   </div>
 
-  <!-- =====================================================================
-       OUTPUT 1: resumo mensal por código de pagamento
-       ===================================================================== -->
+  <!-- OUTPUT 1 -->
   <div id="summaryCard" class="card" style="display:none">
     <h2>Output 1 · Resumo mensal por código de pagamento</h2>
     <div class="toolbar noprint">
-      <button class="btn secondary" onclick="copySummary()">📋 Copiar resumo</button>
-      <button class="btn secondary" onclick="exportCSV('summary')">⬇️ CSV resumo</button>
+      <button class="btn secondary" onclick="copySummary()">📋 Copiar</button>
+      <button class="btn secondary" onclick="exportCSV('summary')">⬇️ CSV</button>
       <button class="btn secondary" onclick="window.print()">🖨️ Imprimir</button>
     </div>
     <div style="overflow-x:auto">
       <table id="summaryTable">
-        <thead>
-          <tr>
-            <th>Código</th><th>Descrição / Tipo</th>
-            <th class="num">Horas pagas</th>
-            <th class="num">Horas ER</th>
-            <th class="num">Horas TN</th>
-            <th>Notas</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-        <tfoot></tfoot>
+        <thead><tr><th>Código</th><th>Descrição / Tipo</th><th class="num">Horas pagas</th>
+          <th class="num">Horas ER</th><th class="num">Horas TN</th><th>Notas</th></tr></thead>
+        <tbody></tbody><tfoot></tfoot>
       </table>
     </div>
-    <p class="small">Compare cada linha com o recibo de vencimento. As horas TN são um
-      <b>acréscimo de noturno</b> contadas em separado e podem coincidir com horas já listadas em códigos ER.</p>
+    <p class="small">TN é um <b>acréscimo de noturno</b> contado em separado — coincide com horas já listadas em códigos ER.</p>
   </div>
 
-  <!-- =====================================================================
-       OUTPUT 2: detalhe por turno ER
-       ===================================================================== -->
+  <!-- OUTPUT 2 -->
   <div id="shiftsCard" class="card" style="display:none">
     <h2>Output 2 · Detalhe individual por turno ER</h2>
     <div class="toolbar noprint">
-      <button class="btn secondary" onclick="copyShifts()">📋 Copiar detalhe</button>
-      <button class="btn secondary" onclick="exportCSV('shifts')">⬇️ CSV detalhe</button>
+      <button class="btn secondary" onclick="copyShifts()">📋 Copiar</button>
+      <button class="btn secondary" onclick="exportCSV('shifts')">⬇️ CSV</button>
     </div>
     <div id="shiftsArea"></div>
   </div>
-
 </main>
 
 <script>
 /* =========================================================================
-   PARTE A — CONFIGURAÇÃO DE REGRAS (EDITÁVEL)
+   PARTE A — CONFIGURAÇÃO DE REGRAS DE PAGAMENTO (EDITÁVEL)
    -------------------------------------------------------------------------
-   ⚠️ O repositório de origem NÃO define códigos nem regras de pagamento.
-   Tudo o que está marcado com `needsConfirmation:true` é uma SUPOSIÇÃO e
-   aparece assinalado na UI como «Precisa de confirmação».
-
-   COMO ATUALIZAR DEPOIS:
-     - Para corrigir/adicionar um código de pagamento: editar PAYROLL_RULES.codes.
-     - Para mudar a janela legal de trabalho noturno: PAYROLL_RULES.nightWindow.
-     - Para mudar limites diários/semanais: PAYROLL_RULES.limits.
-   Nenhuma regra está espalhada pela UI — está toda aqui.
+   Editar AQUI para corrigir/confirmar regras. `confirm:true` => suposição
+   (badge amarelo). `missing:true` => código real ainda não fornecido
+   (badge vermelho "EM FALTA"); preencha o número e ponha missing:false.
    ========================================================================= */
 const PAYROLL_RULES = {
-  // --- Janela legal de Trabalho Noturno (TN) --------------------------------
-  // SUPOSIÇÃO: Código do Trabalho PT, trabalho noturno entre 22:00 e 07:00.
-  // (O repo usa 20:00-08:00 como *turno* de noite, que é diferente da janela
-  //  legal de noturno. Confirme qual aplica ao seu acordo coletivo.)
-  nightWindow: { startHour: 22, endHour: 7, needsConfirmation: true },
+  // Janela legal de Trabalho Noturno (TN). SUPOSIÇÃO: 22:00–07:00 (Cód. Trabalho PT).
+  nightWindow: { startHour: 22, endHour: 7, confirm:true },
+  // Sábado: a partir desta hora conta como DDC (descanso complementar); antes conta como dia útil. SUPOSIÇÃO.
+  saturdaySplitHour: { hour: 13, confirm:true },
+  // "1ª hora": duração (min) que bilha sob o código "1ª"; o resto do turno bilha sob "seguintes".
+  firstHourMinutes: { minutes: 60, confirm:false },
+  limits: { maxDailyHours:24, maxWeeklyHours:48, confirm:true },
 
-  // --- Janela diurna de referência (reutilizada do repo: shiftWindow 'day') -
-  // REUTILIZADO do repo: turno de dia = 08:00-20:00.
-  dayWindow: { startHour: 8, endHour: 20, needsConfirmation: false },
-
-  // --- Tipos de turno ER e respetivas janelas (REUTILIZADO do repo) ---------
-  // Estes mapeiam diretamente shiftWindow() do scheduler original.
-  shiftTypes: {
-    day:        { label:'ER Dia (12h)',   start:'08:00', end:'20:00', overnight:false },
-    night:      { label:'ER Noite (12h)', start:'20:00', end:'08:00', overnight:true  },
-    h24:        { label:'ER 24h',         start:'08:00', end:'08:00', overnight:true  },
-    prevention: { label:'Prevenção',      start:'08:00', end:'08:00', overnight:true  },
-    regular:    { label:'Trabalho Regular', start:'08:00', end:'16:00', overnight:false }
-  },
-
-  // --- Limites para validação (SUPOSIÇÃO) -----------------------------------
-  limits: {
-    maxDailyHours: 24,            // impossível exceder
-    // Limite semanal = horas contratadas + margem de suplementar. SUPOSIÇÃO.
-    maxWeeklyExtraHours: 48,      // teto semanal total (contrato + ER), needsConfirmation
-    needsConfirmation: true
-  },
-
-  // --- CÓDIGOS DE PAGAMENTO (SUPOSIÇÃO — o repo não os define) ---------------
-  // Estrutura de cada código:
-  //   key   -> identificador interno usado pelo motor de cálculo
-  //   code  -> código tal como aparece no recibo (EDITAR para o seu real)
-  //   desc  -> descrição legível
-  //   isER  -> conta como horas ER no resumo
-  //   isTN  -> conta como horas TN (acréscimo noturno) no resumo
-  //   needsConfirmation -> mostra aviso na UI
+  /* CÓDIGOS DE PAGAMENTO
+     key -> {code, desc, isER, isTN, confirm, missing}
+     Códigos FORNECIDOS pelo utilizador (confirmados):
+       700.001 E DUDiu1ªHosp · 700.002 E DUDiuSegHosp
+       700.006 E Sáb>13DDCDiuSegHosp · 700.009 E DomDDSDiu1ªHosp
+       700.010 E DomDDSDiuSegHosp · 211.001 TN DUNotOEHosp
+  */
   codes: {
-    ER_DU_D:  { code:'ER-DD', desc:'ER diurno — dia útil',           isER:true,  isTN:false, needsConfirmation:true },
-    ER_DU_N:  { code:'ER-DN', desc:'ER noturno — dia útil',          isER:true,  isTN:false, needsConfirmation:true },
-    ER_FDS_D: { code:'ER-FD', desc:'ER diurno — fim de semana/feriado', isER:true, isTN:false, needsConfirmation:true },
-    ER_FDS_N: { code:'ER-FN', desc:'ER noturno — fim de semana/feriado',isER:true, isTN:false, needsConfirmation:true },
-    TN:       { code:'TN',    desc:'Trabalho Noturno (acréscimo)',   isER:false, isTN:true,  needsConfirmation:true },
-    RW:       { code:'RW',    desc:'Trabalho Regular (contratado)',  isER:false, isTN:false, needsConfirmation:false }
+    // --- ER dia útil, diurno ---
+    ER_DU_DIU_1:  {code:'700.001', desc:'ER · dia útil · diurno · 1ª hora',        isER:true, isTN:false, confirm:false, missing:false},
+    ER_DU_DIU_S:  {code:'700.002', desc:'ER · dia útil · diurno · seguintes',      isER:true, isTN:false, confirm:false, missing:false},
+    // --- ER dia útil, noturno (EM FALTA — só temos o TN) ---
+    ER_DU_NOT_1:  {code:'?', desc:'ER · dia útil · noturno · 1ª hora',             isER:true, isTN:false, confirm:true, missing:true},
+    ER_DU_NOT_S:  {code:'?', desc:'ER · dia útil · noturno · seguintes',           isER:true, isTN:false, confirm:true, missing:true},
+    // --- ER Sábado >13h (DDC), diurno ---
+    ER_SAB_DIU_1: {code:'?', desc:'ER · Sáb>13h (DDC) · diurno · 1ª hora',         isER:true, isTN:false, confirm:true, missing:true},
+    ER_SAB_DIU_S: {code:'700.006', desc:'ER · Sáb>13h (DDC) · diurno · seguintes', isER:true, isTN:false, confirm:false, missing:false},
+    ER_SAB_NOT_1: {code:'?', desc:'ER · Sáb>13h (DDC) · noturno · 1ª hora',        isER:true, isTN:false, confirm:true, missing:true},
+    ER_SAB_NOT_S: {code:'?', desc:'ER · Sáb>13h (DDC) · noturno · seguintes',      isER:true, isTN:false, confirm:true, missing:true},
+    // --- ER Domingo (DDS), diurno ---
+    ER_DOM_DIU_1: {code:'700.009', desc:'ER · Domingo (DDS) · diurno · 1ª hora',   isER:true, isTN:false, confirm:false, missing:false},
+    ER_DOM_DIU_S: {code:'700.010', desc:'ER · Domingo (DDS) · diurno · seguintes', isER:true, isTN:false, confirm:false, missing:false},
+    ER_DOM_NOT_1: {code:'?', desc:'ER · Domingo (DDS) · noturno · 1ª hora',        isER:true, isTN:false, confirm:true, missing:true},
+    ER_DOM_NOT_S: {code:'?', desc:'ER · Domingo (DDS) · noturno · seguintes',      isER:true, isTN:false, confirm:true, missing:true},
+    // --- ER Feriado (EM FALTA) ---
+    ER_FER_DIU_1: {code:'?', desc:'ER · feriado · diurno · 1ª hora',               isER:true, isTN:false, confirm:true, missing:true},
+    ER_FER_DIU_S: {code:'?', desc:'ER · feriado · diurno · seguintes',             isER:true, isTN:false, confirm:true, missing:true},
+    ER_FER_NOT_1: {code:'?', desc:'ER · feriado · noturno · 1ª hora',              isER:true, isTN:false, confirm:true, missing:true},
+    ER_FER_NOT_S: {code:'?', desc:'ER · feriado · noturno · seguintes',            isER:true, isTN:false, confirm:true, missing:true},
+    // --- TN (acréscimo noturno) ---
+    TN_DU:  {code:'211.001', desc:'TN · dia útil · noturno',     isER:false, isTN:true, confirm:true,  missing:false}, // OE? confirmar
+    TN_SAB: {code:'?',       desc:'TN · Sábado · noturno',       isER:false, isTN:true, confirm:true,  missing:true},
+    TN_DOM: {code:'?',       desc:'TN · Domingo · noturno',      isER:false, isTN:true, confirm:true,  missing:true},
+    TN_FER: {code:'?',       desc:'TN · feriado · noturno',      isER:false, isTN:true, confirm:true,  missing:true},
+    // --- Outros ---
+    RW:   {code:'RW',   desc:'Trabalho Regular (contratado)', isER:false, isTN:false, confirm:true, missing:false},
+    PREV: {code:'PREV', desc:'Prevenção',                    isER:false, isTN:false, confirm:true, missing:true}
   }
 };
 
+// Matriz de seleção de código ER: [categoria][segmento][ordem] -> chave em codes.
+// categoria: DU (dia útil) | SAB (Sáb>13h/DDC) | DOM (Domingo/DDS) | FER (feriado)
+// segmento : diu (diurno) | not (noturno)        ordem: first (1ª hora) | seg (seguintes)
+const CODE_MATRIX = {
+  DU:  { diu:{first:'ER_DU_DIU_1',  seg:'ER_DU_DIU_S'},  not:{first:'ER_DU_NOT_1',  seg:'ER_DU_NOT_S'} },
+  SAB: { diu:{first:'ER_SAB_DIU_1', seg:'ER_SAB_DIU_S'}, not:{first:'ER_SAB_NOT_1', seg:'ER_SAB_NOT_S'} },
+  DOM: { diu:{first:'ER_DOM_DIU_1', seg:'ER_DOM_DIU_S'}, not:{first:'ER_DOM_NOT_1', seg:'ER_DOM_NOT_S'} },
+  FER: { diu:{first:'ER_FER_DIU_1', seg:'ER_FER_DIU_S'}, not:{first:'ER_FER_NOT_1', seg:'ER_FER_NOT_S'} }
+};
+const TN_MATRIX = { DU:'TN_DU', SAB:'TN_SAB', DOM:'TN_DOM', FER:'TN_FER' };
+
+/* SHIFT_CODE_MAP — significado dos códigos da Parte 1 (escala-base).
+   TODO: confirmar significados e (para turnos) início/fim reais.
+   worked:false => folga/descanso/férias (não conta como trabalho).
+   worked:true  => dia trabalhado (regular). Códigos não listados => aviso. */
+const SHIFT_CODE_MAP = {
+  'D':    {label:'Descanso',  worked:false, confirm:false},
+  'F':    {label:'Folga',     worked:false, confirm:false},
+  'Fr':   {label:'Férias',    worked:false, vacation:true, confirm:false},
+  'M256': {label:'Turno M256 (?)', worked:true, start:'', end:'', confirm:true},
+  'T13':  {label:'Turno T13 (?)',  worked:true, start:'', end:'', confirm:true},
+  'Bc':   {label:'Bc (?)',    worked:true, confirm:true},
+  'Cgs':  {label:'Cgs (?)',   worked:true, confirm:true}
+};
+
 /* =========================================================================
-   PARTE B — UTILITÁRIOS DE DATA / FERIADOS / TURNOS
-   -------------------------------------------------------------------------
-   ⬇⬇⬇ REUTILIZADO VERBATIM do repositório de origem (index.html) ⬇⬇⬇
-   Funções: iso, parseISO, addDays, easterSunday, holidaysForYear,
-            isHoliday, holidayName, dayKind, e a tabela PT_HOLIDAYS_FIXED.
+   PARTE B — UTILITÁRIOS DE DATA / FERIADOS  (REUTILIZADO do scheduler)
    ========================================================================= */
-
-// REUTILIZADO do repo
 const PT_HOLIDAYS_FIXED = [
-  {mm:1, dd:1,  name:'Ano Novo'},
-  {mm:4, dd:25, name:'Dia da Liberdade'},
-  {mm:5, dd:1,  name:'Dia do Trabalhador'},
-  {mm:6, dd:10, name:'Dia de Portugal'},
-  {mm:8, dd:15, name:'Assunção de Nossa Senhora'},
-  {mm:10,dd:5,  name:'Implantação da República'},
-  {mm:11,dd:1,  name:'Todos os Santos'},
-  {mm:12,dd:1,  name:'Restauração da Independência'},
-  {mm:12,dd:8,  name:'Imaculada Conceição'},
-  {mm:12,dd:25, name:'Natal'}
+  {mm:1,dd:1,name:'Ano Novo'},{mm:4,dd:25,name:'Dia da Liberdade'},{mm:5,dd:1,name:'Dia do Trabalhador'},
+  {mm:6,dd:10,name:'Dia de Portugal'},{mm:8,dd:15,name:'Assunção de Nossa Senhora'},
+  {mm:10,dd:5,name:'Implantação da República'},{mm:11,dd:1,name:'Todos os Santos'},
+  {mm:12,dd:1,name:'Restauração da Independência'},{mm:12,dd:8,name:'Imaculada Conceição'},{mm:12,dd:25,name:'Natal'}
 ];
-
-// REUTILIZADO do repo (componentes locais para evitar deslocação de fuso)
-function iso(d){
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const day = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`;
-}
-function parseISO(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
-function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-
-// REUTILIZADO do repo — algoritmo de Páscoa (Gauss/Meeus)
+function iso(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
+function parseISO(s){const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);}
+function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
 function easterSunday(year){
-  const a = year%19, b = Math.floor(year/100), c = year%100;
-  const d = Math.floor(b/4), e = b%4;
-  const f = Math.floor((b+8)/25);
-  const g = Math.floor((b-f+1)/3);
-  const h = (19*a + b - d - g + 15)%30;
-  const i = Math.floor(c/4), k = c%4;
-  const l = (32 + 2*e + 2*i - h - k)%7;
-  const m = Math.floor((a + 11*h + 22*l)/451);
-  const month = Math.floor((h + l - 7*m + 114)/31);
-  const day = ((h + l - 7*m + 114)%31) + 1;
-  return new Date(year, month-1, day);
+  const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),
+  g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,
+  m=Math.floor((a+11*h+22*l)/451),month=Math.floor((h+l-7*m+114)/31),day=((h+l-7*m+114)%31)+1;
+  return new Date(year,month-1,day);
 }
-// REUTILIZADO do repo — feriados fixos + móveis (Páscoa, Sexta Santa, Corpo de Deus)
 function holidaysForYear(year){
-  const list = [];
-  PT_HOLIDAYS_FIXED.forEach(h=> list.push({date:iso(new Date(year,h.mm-1,h.dd)), name:h.name}));
-  const easter = easterSunday(year);
-  list.push({date:iso(addDays(easter,-2)), name:'Sexta-Feira Santa'});
-  list.push({date:iso(easter),             name:'Domingo de Páscoa'});
-  list.push({date:iso(addDays(easter,60)), name:'Corpo de Deus'});
+  const list=[];
+  PT_HOLIDAYS_FIXED.forEach(h=>list.push({date:iso(new Date(year,h.mm-1,h.dd)),name:h.name}));
+  const e=easterSunday(year);
+  list.push({date:iso(addDays(e,-2)),name:'Sexta-Feira Santa'});
+  list.push({date:iso(e),name:'Domingo de Páscoa'});
+  list.push({date:iso(addDays(e,60)),name:'Corpo de Deus'});
   return list;
 }
-function isHoliday(dateISO){
-  const year = parseInt(dateISO.slice(0,4),10);
-  return holidaysForYear(year).some(h=>h.date===dateISO);
+function isHoliday(dateISO){return holidaysForYear(+dateISO.slice(0,4)).some(h=>h.date===dateISO);}
+function holidayName(dateISO){const h=holidaysForYear(+dateISO.slice(0,4)).find(h=>h.date===dateISO);return h?h.name:'';}
+function dayKind(dateISO){if(isHoliday(dateISO))return 'holiday';const dow=parseISO(dateISO).getDay();return (dow===0||dow===6)?'weekend':'weekday';}
+const WEEKDAY_PT=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+const WEEKDAY_SHORT=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+function weekdayName(dateISO){return WEEKDAY_PT[parseISO(dateISO).getDay()];}
+function weekdayShort(dateISO){return WEEKDAY_SHORT[parseISO(dateISO).getDay()];}
+function isoWeekKey(dateISO){
+  const d=parseISO(dateISO),t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const dn=(t.getUTCDay()+6)%7;t.setUTCDate(t.getUTCDate()-dn+3);
+  const ft=new Date(Date.UTC(t.getUTCFullYear(),0,4));
+  const wk=1+Math.round(((t-ft)/86400000)/7);
+  return `${t.getUTCFullYear()}-W${String(wk).padStart(2,'0')}`;
 }
-function holidayName(dateISO){
-  const year = parseInt(dateISO.slice(0,4),10);
-  const h = holidaysForYear(year).find(h=>h.date===dateISO);
-  return h ? h.name : '';
-}
-// REUTILIZADO do repo — feriado tem prioridade sobre fim de semana
-function dayKind(dateISO){
-  if(isHoliday(dateISO)) return 'holiday';
-  const dow = parseISO(dateISO).getDay(); // 0=Dom,6=Sáb
-  if(dow===0||dow===6) return 'weekend';
-  return 'weekday';
-}
-const WEEKDAY_PT = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-const WEEKDAY_PT_SHORT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-function weekdayName(dateISO){ return WEEKDAY_PT[parseISO(dateISO).getDay()]; }
-function weekdayShort(dateISO){ return WEEKDAY_PT_SHORT[parseISO(dateISO).getDay()]; }
+// Segunda-feira da semana ISO que contém dateISO
+function mondayOfWeek(dateISO){const d=parseISO(dateISO);const dn=(d.getDay()+6)%7;return iso(addDays(d,-dn));}
+function sundayOfWeek(dateISO){const d=parseISO(dateISO);const dn=(d.getDay()+6)%7;return iso(addDays(d,6-dn));}
 
 /* =========================================================================
-   PARTE C — MOTOR DE CÁLCULO (puro, separado da UI)
-   -------------------------------------------------------------------------
-   Entradas: lista de "entries" (um por dia) + contexto (horas semanais).
-   Saídas:   { summary, shifts, warnings }.
-   Nenhuma destas funções toca no DOM.
+   PARTE C — MOTOR DE CÁLCULO (puro; sem DOM)
    ========================================================================= */
+function round2(n){return Math.round((n+Number.EPSILON)*100)/100;}
+function timeToMin(t){if(!t)return null;const m=/^(\d{1,2}):?(\d{2})?$/.exec(String(t).trim());if(!m)return null;
+  const h=+m[1],mi=m[2]?+m[2]:0;if(h>24||mi>59)return null;return h*60+mi;}
+function minToHHMM(min){min=((min%1440)+1440)%1440;return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0');}
+function shiftDurationMin(s,e){let d=e-s;if(d<=0)d+=1440;return d;}
 
-// "HH:MM" -> minutos desde 00:00 (null se vazio/ inválido)
-function timeToMin(t){
-  if(!t) return null;
-  const m = /^(\d{1,2}):?(\d{2})?$/.exec(String(t).trim());
-  if(!m) return null;
-  const h = parseInt(m[1],10), mi = m[2]?parseInt(m[2],10):0;
-  if(h>24||mi>59) return null;
-  return h*60+mi;
+// Está o minuto-do-dia (0..1439) dentro da janela noturna?
+function isNightMinute(tod){
+  const nw=PAYROLL_RULES.nightWindow;let ns=nw.startHour*60,ne=nw.endHour*60;
+  if(ne<=ns){ return tod>=ns || tod<ne; }      // janela atravessa meia-noite (22–07)
+  return tod>=ns && tod<ne;
 }
-function minToHHMM(min){
-  min = ((min%1440)+1440)%1440;
-  return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0');
-}
-
-// Duração de um turno em minutos, tratando passagem de meia-noite.
-// startMin/endMin em minutos; se end<=start assume-se dia seguinte.
-function shiftDurationMin(startMin, endMin){
-  let dur = endMin - startMin;
-  if(dur <= 0) dur += 1440;
-  return dur;
+// Categoria de pagamento de um minuto, na sua data/hora reais.
+function categoryFor(dateISO, tod){
+  if(isHoliday(dateISO)) return 'FER';
+  const dow=parseISO(dateISO).getDay();
+  if(dow===0) return 'DOM';                                   // Domingo (DDS)
+  if(dow===6) return (tod >= PAYROLL_RULES.saturdaySplitHour.hour*60) ? 'SAB' : 'DU'; // Sáb>13h => DDC
+  return 'DU';
 }
 
-// Sobreposição (minutos) de [aStart,aEnd] com [bStart,bEnd] na mesma reta temporal.
-function overlapMin(aStart,aEnd,bStart,bEnd){
-  return Math.max(0, Math.min(aEnd,bEnd) - Math.max(aStart,bStart));
-}
-
-// Minutos de TRABALHO NOTURNO dentro de um turno [startMin, startMin+dur].
-// A janela noturna (PAYROLL_RULES.nightWindow) repete-se a cada 24h; testamos
-// as ocorrências em [-1,0,1] dias para cobrir turnos que atravessam a noite.
-function nightMinutesInShift(startMin, durMin){
-  const nw = PAYROLL_RULES.nightWindow;
-  let nStart = nw.startHour*60;            // ex.: 22:00 -> 1320
-  let nEnd   = nw.endHour*60;              // ex.: 07:00 -> 420
-  if(nEnd <= nStart) nEnd += 1440;         // janela atravessa a meia-noite -> [1320,1860]
-  const shiftStart = startMin;
-  const shiftEnd   = startMin + durMin;
-  let total = 0;
-  for(let dayOff=-1; dayOff<=1; dayOff++){
-    const ws = nStart + dayOff*1440;
-    const we = nEnd   + dayOff*1440;
-    total += overlapMin(shiftStart, shiftEnd, ws, we);
+/* Classifica um turno ER em alocações por código.
+   startMin = minuto de início (0..1439) no dia 'dateISO'; durMin = duração. */
+function classifyErShift(dateISO, startMin, durMin){
+  const erMin={}, tnMin={};            // erMin['CAT|SEG|ORDER'] , tnMin['CAT']
+  const firstN=PAYROLL_RULES.firstHourMinutes.minutes;
+  for(let m=0;m<durMin;m++){
+    const abs=startMin+m, tod=((abs%1440)+1440)%1440, offDays=Math.floor(abs/1440);
+    const realDate=iso(addDays(parseISO(dateISO),offDays));
+    const cat=categoryFor(realDate,tod);
+    const seg=isNightMinute(tod)?'not':'diu';
+    const order=(m<firstN)?'first':'seg';
+    const k=cat+'|'+seg+'|'+order;
+    erMin[k]=(erMin[k]||0)+1;
+    if(seg==='not') tnMin[cat]=(tnMin[cat]||0)+1;
   }
-  return total;
+  const allocations=[];
+  // ER por código
+  Object.entries(erMin).forEach(([k,mins])=>{
+    const [cat,seg,order]=k.split('|');
+    const key=CODE_MATRIX[cat]?.[seg]?.[order];
+    pushAlloc(allocations,key,mins/60);
+  });
+  // TN (acréscimo) por categoria
+  Object.entries(tnMin).forEach(([cat,mins])=>{
+    pushAlloc(allocations,TN_MATRIX[cat],mins/60);
+  });
+  // consolidar mesmas chaves e ordenar
+  const byKey={};
+  allocations.forEach(a=>{ if(!byKey[a.key])byKey[a.key]={...a}; else byKey[a.key].hours+=a.hours; });
+  return Object.values(byKey).map(a=>({...a,hours:round2(a.hours)}))
+    .sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+}
+function pushAlloc(arr, key, hours){
+  if(hours<=0) return;
+  const c = key && PAYROLL_RULES.codes[key];
+  if(c){ arr.push({key,code:c.code,desc:c.desc,hours,isER:c.isER,isTN:c.isTN,confirm:c.confirm,missing:c.missing}); }
+  else { arr.push({key:key||'??',code:'??',desc:'Código não mapeado',hours,isER:true,isTN:false,confirm:true,missing:true}); }
 }
 
-// Devolve a chave de código ER conforme dia útil/FDS e dia/noite.
-function erCodeKey(isFds, segment){ // segment: 'day' | 'night'
-  if(isFds) return segment==='night' ? 'ER_FDS_N' : 'ER_FDS_D';
-  return segment==='night' ? 'ER_DU_N' : 'ER_DU_D';
-}
-
-/**
- * Calcula um dia/turno individual.
- * @param entry  {date, regular, er, tn, overlap, shiftType, start, end, hours}
- * @param ctx    {dailyContractHours}
- * @returns {object} detalhe do turno + alocações por código + avisos
- */
+/* Calcula uma entrada-dia.
+   entry: {date, regular, er, prevention, start, end, hours, rosterCode}
+   ctx:   {dailyContractHours} */
 function computeEntry(entry, ctx){
-  const date = entry.date;
-  const kind = dayKind(date);                 // REUTILIZADO do repo
-  const isFds = (kind !== 'weekday');          // fim de semana ou feriado
-  const warnings = [];
-  const allocations = [];                      // [{key, code, desc, hours}]
+  const date=entry.date, kind=dayKind(date), isFds=(kind!=='weekday');
+  const warnings=[]; let allocations=[];
+  let startMin=timeToMin(entry.start), endMin=timeToMin(entry.end), durMin=null;
+  if(startMin!=null && endMin!=null) durMin=shiftDurationMin(startMin,endMin);
+  else if(typeof entry.hours==='number' && entry.hours>0) durMin=entry.hours*60;
 
-  // Resolve início/fim: do próprio entry ou da definição do tipo de turno (repo).
-  let startStr = entry.start, endStr = entry.end;
-  if((!startStr || !endStr) && entry.shiftType && PAYROLL_RULES.shiftTypes[entry.shiftType]){
-    const st = PAYROLL_RULES.shiftTypes[entry.shiftType];
-    startStr = startStr || st.start;
-    endStr   = endStr   || st.end;
+  // validações de tempo
+  if(entry.er || entry.prevention){
+    if(startMin==null && endMin==null && !(durMin>0))
+      warnings.push({type:'err',msg:`${date}: ${entry.er?'ER':'Prevenção'} marcado mas sem horas (início/fim ou horas).`});
+    else if((startMin==null)!==(endMin==null))
+      warnings.push({type:'err',msg:`${date}: falta a hora de ${startMin==null?'início':'fim'}.`});
   }
-  let startMin = timeToMin(startStr);
-  let endMin   = timeToMin(endStr);
+  if(durMin!=null && durMin>PAYROLL_RULES.limits.maxDailyHours*60)
+    warnings.push({type:'err',msg:`${date}: duração ${(durMin/60).toFixed(1)}h excede o máximo diário (${PAYROLL_RULES.limits.maxDailyHours}h).`});
 
-  // --- Duração do turno -----------------------------------------------------
-  let durMin = null;
-  if(startMin!=null && endMin!=null){
-    durMin = shiftDurationMin(startMin, endMin);
-  } else if(typeof entry.hours === 'number' && entry.hours>0){
-    durMin = entry.hours*60;                   // horas diretas, sem janela horária
-  }
+  let totalH=durMin>0?durMin/60:0, nightH=0, erDayH=0, erNightH=0;
 
-  // --- Validações de tempo --------------------------------------------------
-  if((entry.er || entry.tn || entry.regular)){
-    if(startMin==null && endMin==null && !(durMin>0)){
-      warnings.push({type:'err', msg:`${date}: turno marcado mas sem horas (nem início/fim nem horas diretas).`});
-    } else if((startMin==null) !== (endMin==null)){
-      warnings.push({type:'err', msg:`${date}: falta a hora de ${startMin==null?'início':'fim'}.`});
-    }
-  }
-  if(durMin!=null && durMin > PAYROLL_RULES.limits.maxDailyHours*60){
-    warnings.push({type:'err', msg:`${date}: duração de ${(durMin/60).toFixed(1)}h excede o máximo diário (${PAYROLL_RULES.limits.maxDailyHours}h).`});
-  }
-  if(durMin!=null && durMin <= 0){
-    warnings.push({type:'err', msg:`${date}: intervalo de tempo impossível (fim ≤ início sem passagem de dia válida).`});
+  if(entry.er && durMin>0 && startMin!=null){
+    allocations=classifyErShift(date,startMin,durMin);
+    allocations.forEach(a=>{ if(a.isTN) nightH+=a.hours; else if(a.isER){ /* dia/noite via key */ } });
+    // recomputar dia/noite a partir das chaves ER
+    allocations.forEach(a=>{ if(a.isER){ if(String(a.key).includes('NOT')) erNightH+=a.hours; else if(String(a.key).includes('DIU')) erDayH+=a.hours; } });
+    // alertas de códigos em falta
+    allocations.filter(a=>a.missing).forEach(a=>warnings.push({type:'warn',
+      msg:`${date}: ${a.desc} (${a.hours.toFixed(2)}h) usa um código ainda EM FALTA — preencha em PAYROLL_RULES.codes.`}));
+  } else if(entry.er && durMin>0){
+    warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir diurno/noturno e 1ª/seguintes.`});
   }
 
-  // --- Horas noturnas -------------------------------------------------------
-  let nightH = 0;
-  if(durMin>0 && startMin!=null){
-    nightH = nightMinutesInShift(startMin, durMin)/60;
-  } else if(entry.tn && typeof entry.hours==='number'){
-    // Sem janela horária mas TN marcado: não dá para localizar a noite.
-    warnings.push({type:'warn', msg:`${date}: TN marcado mas sem início/fim — impossível calcular as horas noturnas com precisão. Indique horas de início/fim.`});
+  if(entry.prevention && durMin>0){
+    pushAlloc(allocations,'PREV',totalH);
   }
 
-  // Coerência das marcações vs deteção
-  if(entry.er && !(durMin>0)){
-    warnings.push({type:'warn', msg:`${date}: ER marcado mas não foram detetadas horas de ER.`});
-  }
-  if(entry.tn && nightH===0 && durMin>0){
-    warnings.push({type:'warn', msg:`${date}: TN marcado mas nenhuma hora cai na janela noturna (${PAYROLL_RULES.nightWindow.startHour}:00–${String(PAYROLL_RULES.nightWindow.endHour).padStart(2,'0')}:00).`});
-  }
-
-  const totalH = durMin>0 ? durMin/60 : 0;
-  let regularInside = 0;   // horas contratadas dentro do turno
-  let erDayH = 0, erNightH = 0;
-
-  if(entry.er){
-    // Horas diurnas do turno (não noturnas)
-    const dayH = Math.max(0, totalH - nightH);
-    // SUPOSIÇÃO (usa as horas semanais): se o dia também é trabalho regular,
-    // as primeiras `dailyContractHours` horas diurnas contam como contratadas
-    // (RW) e o restante como ER. needsConfirmation.
-    if(entry.regular){
-      regularInside = Math.min(ctx.dailyContractHours, dayH);
-    }
-    erDayH   = Math.max(0, dayH - regularInside);
-    erNightH = nightH;
-
-    if(regularInside>0){
-      const c = PAYROLL_RULES.codes.RW;
-      allocations.push({key:'RW', code:c.code, desc:c.desc, hours:round2(regularInside)});
-    }
-    if(erDayH>0){
-      const k = erCodeKey(isFds,'day'); const c = PAYROLL_RULES.codes[k];
-      allocations.push({key:k, code:c.code, desc:c.desc, hours:round2(erDayH)});
-    }
-    if(erNightH>0){
-      const k = erCodeKey(isFds,'night'); const c = PAYROLL_RULES.codes[k];
-      allocations.push({key:k, code:c.code, desc:c.desc, hours:round2(erNightH)});
-    }
-  } else if(entry.regular){
-    // Dia regular sem ER: todas as horas são contratadas (RW)
-    regularInside = totalH;
-    if(totalH>0){
-      const c = PAYROLL_RULES.codes.RW;
-      allocations.push({key:'RW', code:c.code, desc:c.desc, hours:round2(totalH)});
-    }
-  }
-
-  // --- TN: acréscimo de noturno (conta em separado, pode coincidir com ER) --
-  // Aplica-se sempre que há horas noturnas E o dia tem TN marcado (ou sobreposição,
-  // ou simplesmente trabalho noturno detetado num turno regular/ER).
-  const tnApplies = (entry.tn || entry.overlap || nightH>0);
-  let tnH = 0;
-  if(tnApplies && nightH>0){
-    tnH = nightH;
-    const c = PAYROLL_RULES.codes.TN;
-    allocations.push({key:'TN', code:c.code, desc:c.desc, hours:round2(tnH)});
+  // Trabalho Regular: dias úteis trabalhados sem ER (base contratada)
+  let rwH=0;
+  if(entry.regular && !entry.er){
+    rwH = (durMin>0) ? totalH : ctx.dailyContractHours;   // usa horas reais se houver, senão a base diária
+    pushAlloc(allocations,'RW',rwH);
   }
 
   return {
-    date, kind, isFds,
-    weekday: weekdayName(date),
-    holiday: kind==='holiday' ? holidayName(date) : '',
-    start: startMin!=null ? minToHHMM(startMin) : '',
-    end:   endMin!=null   ? minToHHMM(endMin)   : '',
-    isER: !!entry.er,
-    totalH: round2(totalH),
-    nightH: round2(nightH),
-    tnH: round2(tnH),
-    erDayH: round2(erDayH),
-    erNightH: round2(erNightH),
-    regularInside: round2(regularInside),
-    allocations,
-    warnings
+    date, kind, isFds, weekday:weekdayName(date), holiday:kind==='holiday'?holidayName(date):'',
+    start:startMin!=null?minToHHMM(startMin):'', end:endMin!=null?minToHHMM(endMin):'',
+    isER:!!entry.er, isPrev:!!entry.prevention,
+    totalH:round2(totalH), nightH:round2(nightH), tnH:round2(nightH),
+    erDayH:round2(erDayH), erNightH:round2(erNightH), regularInside:0, rwH:round2(rwH),
+    allocations, warnings
   };
 }
 
-function round2(n){ return Math.round((n+Number.EPSILON)*100)/100; }
-
-/**
- * Calcula o mês inteiro.
- * @param entries lista de entradas (dias com algo marcado)
- * @param ctx     {weeklyHours, dailyContractHours}
- */
 function computeMonth(entries, ctx){
-  const shifts = [];          // detalhe por dia/turno
-  const warnings = [];
-  const summaryMap = {};      // key -> {code,desc,isER,isTN,hours,erHours,tnHours}
-  const weekTotals = {};      // chave semana -> horas totais (validação semanal)
-
-  function ensureCode(key){
-    if(!summaryMap[key]){
-      const c = PAYROLL_RULES.codes[key];
-      summaryMap[key] = {key, code:c.code, desc:c.desc, isER:c.isER, isTN:c.isTN,
-                         needsConfirmation:c.needsConfirmation, hours:0, erHours:0, tnHours:0};
-    }
+  const shifts=[], warnings=[], summaryMap={}, weekTotals={};
+  function ensure(key,code,desc,isER,isTN,confirm,missing){
+    if(!summaryMap[key]) summaryMap[key]={key,code,desc,isER,isTN,confirm,missing,hours:0,erHours:0,tnHours:0};
     return summaryMap[key];
   }
-
-  for(const entry of entries){
-    const r = computeEntry(entry, ctx);
-    shifts.push(r);
-    r.warnings.forEach(w=>warnings.push(w));
-
+  for(const e of entries){
+    const r=computeEntry(e,ctx);
+    // soma semanal usa TODOS os dias (incl. dias extra de semana de fronteira)
+    // para validar o teto semanal; exclui TN (que é acréscimo, não horas extra).
+    const wk=isoWeekKey(e.date);
+    const dayHours=r.allocations.filter(a=>!a.isTN).reduce((s,a)=>s+a.hours,0);
+    weekTotals[wk]=(weekTotals[wk]||0)+dayHours;
+    // dias FORA do mês (semana de fronteira) não entram no resumo/detalhe mensal
+    if(e.inMonth===false) continue;
+    shifts.push(r); r.warnings.forEach(w=>warnings.push(w));
     r.allocations.forEach(a=>{
-      const row = ensureCode(a.key);
-      row.hours += a.hours;
-      if(row.isER) row.erHours += a.hours;
-      if(row.isTN) row.tnHours += a.hours;
+      const row=ensure(a.key,a.code,a.desc,a.isER,a.isTN,a.confirm,a.missing);
+      row.hours+=a.hours; if(a.isER)row.erHours+=a.hours; if(a.isTN)row.tnHours+=a.hours;
     });
-
-    // acumular para validação semanal (exclui TN, que é acréscimo, não horas adicionais)
-    const wk = isoWeekKey(entry.date);
-    weekTotals[wk] = (weekTotals[wk]||0) + r.totalH;
   }
-
-  // Validação semanal (SUPOSIÇÃO — needsConfirmation)
   Object.entries(weekTotals).forEach(([wk,h])=>{
-    if(h > PAYROLL_RULES.limits.maxWeeklyExtraHours){
-      warnings.push({type:'warn',
-        msg:`Semana ${wk}: ${round2(h)}h totais excedem o teto semanal assumido (${PAYROLL_RULES.limits.maxWeeklyExtraHours}h). [Precisa de confirmação]`});
-    }
+    if(h>PAYROLL_RULES.limits.maxWeeklyHours)
+      warnings.push({type:'warn',msg:`Semana ${wk}: ${round2(h)}h totais excedem o teto semanal assumido (${PAYROLL_RULES.limits.maxWeeklyHours}h). [confirmar]`});
   });
-
-  // Ordenar resumo por código
-  const summary = Object.values(summaryMap)
-    .map(r=>({...r, hours:round2(r.hours), erHours:round2(r.erHours), tnHours:round2(r.tnHours)}))
-    .sort((a,b)=>a.code.localeCompare(b.code));
-
+  const summary=Object.values(summaryMap)
+    .map(r=>({...r,hours:round2(r.hours),erHours:round2(r.erHours),tnHours:round2(r.tnHours)}))
+    .sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   return {summary, shifts, warnings};
 }
 
-// Chave de semana ISO — REUTILIZADO do repo
-function isoWeekKey(dateISO){
-  const d = parseISO(dateISO);
-  const t = new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
-  const dayNum = (t.getUTCDay()+6)%7;
-  t.setUTCDate(t.getUTCDate() - dayNum + 3);
-  const firstThursday = new Date(Date.UTC(t.getUTCFullYear(),0,4));
-  const diff = (t - firstThursday)/86400000;
-  const week = 1 + Math.round(diff/7);
-  return `${t.getUTCFullYear()}-W${String(week).padStart(2,'0')}`;
+/* =========================================================================
+   PARTE D — PARSER (3 partes) + CALENDÁRIO COM SEMANAS COMPLETAS
+   ========================================================================= */
+function stripAccents(s){return s.normalize('NFD').replace(/[̀-ͯ]/g,'');}
+function daysInMonth(y,m){return new Date(y,m,0).getDate();}
+
+// Um token da Parte 1 é "código" (vs nome) se: está no mapa, tem dígito,
+// é uma única maiúscula, ou é curto e capitalizado tipo código.
+function looksLikeCode(t){
+  if(SHIFT_CODE_MAP[t]) return true;
+  if(/\d/.test(t)) return true;
+  if(/^[A-Z]$/.test(t)) return true;
+  if(/^[A-Z][a-z]{1,2}$/.test(t)) return true; // Fr, Bc, Cgs
+  return false;
 }
 
-/* =========================================================================
-   PARTE D — PARSER DO PLANO COLADO
-   -------------------------------------------------------------------------
-   Tolerante: tenta extrair data, tipo de turno e horas de cada linha.
-   Devolve {entries, warnings}. Linhas não reconhecidas geram aviso.
-   ========================================================================= */
-function stripAccents(s){ return s.normalize('NFD').replace(/[̀-ͯ]/g,''); }
+/* Parte 1: nome + 1 código/dia. token[0] = último dia do mês anterior. */
+function parsePart1(text, year, month){
+  const warnings=[];
+  const tokens=text.trim().split(/\s+/).filter(Boolean);
+  if(!tokens.length) return {name:'', byDate:{}, warnings};
+  // separar nome (run inicial de não-códigos) dos códigos
+  let i=0; while(i<tokens.length && !looksLikeCode(tokens[i])) i++;
+  const name=tokens.slice(0,i).join(' ');
+  const codes=tokens.slice(i);
+  if(!codes.length){ warnings.push({type:'err',msg:'Parte 1: não foram encontrados códigos de escala após o nome.'}); return {name,byDate:{},warnings}; }
+  // datas: token0 = último dia do mês anterior; token1.. = dias 1..N
+  const prevLast=iso(new Date(year,month-1,0)); // dia 0 do mês = último do anterior
+  const byDate={}; byDate[prevLast]={code:codes[0]};
+  const ndays=daysInMonth(year,month);
+  for(let d=1; d<codes.length; d++){
+    if(d>ndays){ warnings.push({type:'warn',msg:`Parte 1: ${codes.length-1} códigos para um mês de ${ndays} dias — ${codes.length-1-ndays} a mais (ignorados/verifique o nome).`}); break; }
+    const date=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    byDate[date]={code:codes[d]};
+  }
+  if(codes.length-1 < ndays)
+    warnings.push({type:'warn',msg:`Parte 1: só ${codes.length-1} dias para um mês de ${ndays} — faltam códigos no fim.`});
+  // validar códigos
+  Object.values(byDate).forEach(v=>{ if(v.code && !SHIFT_CODE_MAP[v.code]) warnings.push({type:'warn',msg:`Código de escala não mapeado: «${v.code}» (adicione-o a SHIFT_CODE_MAP).`}); });
+  return {name, byDate, warnings};
+}
 
-function parseMonthlyPlan(text, year, month){
-  const entries = [];
-  const warnings = [];
-  const lines = text.split(/\r?\n/);
+/* Parte 2/3: linhas "DIA [hora/código]". Aceita também tokens "3 20:00-08:00". */
+function parseSparsePart(text, year, month, kindLabel){
+  const warnings=[]; const byDate={};
+  const ndays=daysInMonth(year,month);
+  // normalizar: tratar quebras de linha e múltiplos espaços; cada "registo" começa num número de dia
+  const lines = text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  // se vier tudo numa linha, tentar dividir por padrão "número ..."
+  let records=[];
+  if(lines.length<=1 && text.trim()){
+    const one=text.trim();
+    const re=/(\d{1,2})\s+([^\d][^]*?)(?=\s+\d{1,2}\s|$)/g; // dia + resto até ao próximo "dia "
+    let m, any=false;
+    while((m=re.exec(one))){ records.push(m[1]+' '+m[2].trim()); any=true; }
+    if(!any) records=lines;
+  } else records=lines;
 
-  lines.forEach((raw, idx)=>{
-    const line = raw.trim();
-    if(!line) return;
-    const lower = stripAccents(line.toLowerCase());
-
-    // --- Data -------------------------------------------------------------
-    let date = null;
-    let m;
-    if((m = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(line))){           // 2026-06-03
-      date = `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
-    } else if((m = /\b(\d{1,2})[\/.](\d{1,2})(?:[\/.](\d{2,4}))?/.exec(line))){ // 04/06 ou 04/06/2026
-      const dd=+m[1], mm=+m[2], yy=m[3]?(+m[3]<100?2000+ +m[3]:+m[3]):year;
-      date = `${yy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
-    } else if((m = /^(\d{1,2})\b/.exec(line))){                   // só o dia: "7 ..."
-      const dd=+m[1];
-      if(dd>=1 && dd<=31) date = `${year}-${String(month).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+  records.forEach((rec,idx)=>{
+    const m=/^(\d{1,2})\b\s*(.*)$/.exec(rec);
+    if(!m){ warnings.push({type:'warn',msg:`${kindLabel}: linha sem número de dia → «${rec}». Prefixe com o dia.`}); return; }
+    const day=+m[1], rest=(m[2]||'').trim();
+    if(day<1||day>ndays){ warnings.push({type:'warn',msg:`${kindLabel}: dia ${day} fora do mês.`}); return; }
+    const date=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    let start='', end='';
+    const mt=/(\d{1,2})[:hH]?(\d{2})?\s*(?:-|–|às|as|a|\/)\s*(\d{1,2})[:hH]?(\d{2})?/.exec(rest);
+    if(mt){ start=`${mt[1].padStart(2,'0')}:${mt[2]||'00'}`; end=`${mt[3].padStart(2,'0')}:${mt[4]||'00'}`; }
+    else {
+      const low=stripAccents(rest.toLowerCase());
+      const sc=Object.keys(SHIFT_CODE_MAP).find(c=>new RegExp('\\b'+c.toLowerCase()+'\\b').test(low));
+      if(sc && SHIFT_CODE_MAP[sc].start){ start=SHIFT_CODE_MAP[sc].start; end=SHIFT_CODE_MAP[sc].end; }
+      // "24"/"24h" => 08:00-08:00 (turno de 24h, janela do scheduler)
+      else if(/\b24h?\b/.test(low)){ start='08:00'; end='08:00'; }
+      // "prev" sem hora => deixa em branco (definir na grelha)
     }
-    if(!date){
-      warnings.push({type:'warn', msg:`Linha ${idx+1}: não foi possível identificar a data → «${line}»`});
-      return;
-    }
-
-    // --- Horas (início/fim) ----------------------------------------------
-    let start=null, end=null, hours=null;
-    let mt;
-    // formatos 08:00-20:00 | 8h-20h | 20:00 às 08:00 | 8-20
-    if((mt = /(\d{1,2})[:hH](\d{2})\s*(?:-|–|às|as|a|\/)\s*(\d{1,2})[:hH](\d{2})/.exec(line))){
-      start=`${mt[1].padStart(2,'0')}:${mt[2]}`; end=`${mt[3].padStart(2,'0')}:${mt[4]}`;
-    } else if((mt = /(\d{1,2}):(\d{2})\s+(\d{1,2}):(\d{2})/.exec(line))){
-      start=`${mt[1].padStart(2,'0')}:${mt[2]}`; end=`${mt[3].padStart(2,'0')}:${mt[4]}`;
-    } else if((mt = /\b(\d{1,2})\s*(?:-|–|às|as|a)\s*(\d{1,2})\b/.exec(line.replace(date,'')))){
-      // 8-20 (sem minutos) — cuidado para não apanhar a data
-      start=`${String(+mt[1]).padStart(2,'0')}:00`; end=`${String(+mt[2]).padStart(2,'0')}:00`;
-    } else if((mt = /\b(\d{1,2}(?:[.,]\d+)?)\s*h(?:oras)?\b/.exec(lower))){
-      hours = parseFloat(mt[1].replace(',','.'));                // "12h" horas diretas
-    }
-
-    // --- Tipo de turno / marcações ---------------------------------------
-    let shiftType='', er=false, tn=false, regular=false, overlap=false;
-    if(/\b24h?\b/.test(lower) || /\bh24\b/.test(lower)){ shiftType='h24'; er=true; }
-    else if(/\bprev/.test(lower)){ shiftType='prevention'; er=true; }
-    else if(/\bnoite\b|\bnight\b|\bnoturn/.test(lower) && /\ber\b/.test(lower)){ shiftType='night'; er=true; }
-    else if(/\bdia\b|\bday\b/.test(lower) && /\ber\b/.test(lower)){ shiftType='day'; er=true; }
-    else if(/\ber\b/.test(lower)){ er=true; }                    // ER sem dia/noite explícito
-    if(/\bnormal\b|\bregular\b|\brw\b/.test(lower)){ regular=true; if(!shiftType) shiftType='regular'; }
-    if(/\btn\b|\bnoturn/.test(lower)){ tn=true; }
-    if(/\bsobrep|\boverlap\b/.test(lower)){ overlap=true; }
-
-    // Inferir ER dia/noite a partir das horas, se ER sem tipo
-    if(er && !shiftType && start && end){
-      const sm=timeToMin(start), em=timeToMin(end);
-      const dur=shiftDurationMin(sm,em);
-      shiftType = (dur>=20) ? 'h24' : (nightMinutesInShift(sm,dur)>dur/2 ? 'night' : 'day');
-    }
-    // Inferir TN se há horas noturnas e não foi marcado
-    if(!tn && start && end){
-      const sm=timeToMin(start), em=timeToMin(end);
-      if(nightMinutesInShift(sm, shiftDurationMin(sm,em))>0) tn=true;
-    }
-
-    if(!er && !tn && !regular){
-      warnings.push({type:'warn', msg:`Linha ${idx+1}: data ok mas tipo de turno não reconhecido → «${line}». Marque manualmente na pré-visualização.`});
-    }
-
-    entries.push({date, regular, er, tn, overlap, shiftType, start:start||'', end:end||'', hours});
+    byDate[date]={start,end,raw:rest};
   });
+  return {byDate, warnings};
+}
 
-  // ordenar por data
-  entries.sort((a,b)=>a.date.localeCompare(b.date));
-  return {entries, warnings};
+/* Constrói a lista de datas: semana completa antes do mês + mês + semana completa depois. */
+function extendedDates(year, month){
+  const first=`${year}-${String(month).padStart(2,'0')}-01`;
+  const last=`${year}-${String(month).padStart(2,'0')}-${String(daysInMonth(year,month)).padStart(2,'0')}`;
+  const start=mondayOfWeek(first), end=sundayOfWeek(last);
+  const out=[]; let d=parseISO(start), e=parseISO(end);
+  while(d<=e){ out.push(iso(d)); d=addDays(d,1); }
+  return {dates:out, monthFirst:first, monthLast:last};
 }
 
 /* =========================================================================
-   PARTE E — UI (estado + renderização)
+   PARTE E — UI: estado + seletores + grelha
    ========================================================================= */
-let UI = {
-  inputMode: 'manual',
-  manualRows: [],     // entradas por dia do mês corrente
-  lastResult: null    // {summary, shifts, warnings}
-};
+let UI = { inputMode:'paste', manualRows:[], gridRows:[], lastResult:null, name:'' };
 
-function currentWeekly(){ return parseInt(document.getElementById('selWeekly').value,10); }
-function dailyContractHours(){ return round2(currentWeekly()/5); } // SUPOSIÇÃO: 5 dias/semana
+function currentWeekly(){return parseInt(document.getElementById('selWeekly').value,10);}
+function dailyContractHours(){return round2(currentWeekly()/5);} // SUPOSIÇÃO: 5 dias/semana
 
-function daysInMonth(year, month){ return new Date(year, month, 0).getDate(); }
-
-// ---- Inicialização de seletores ----
 function initSelectors(){
-  const selMonth = document.getElementById('selMonth');
-  const monthsPT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  selMonth.innerHTML = monthsPT.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
-  const now = new Date();
-  selMonth.value = now.getMonth()+1;
-  document.getElementById('selYear').value = now.getFullYear();
-
-  const selWeekly = document.getElementById('selWeekly');
-  let opts='';
-  for(let h=30; h<=45; h++) opts += `<option value="${h}" ${h===35?'selected':''}>${h} h/semana</option>`;
-  selWeekly.innerHTML = opts;
-  selWeekly.addEventListener('change', updateWeeklyHint);
+  const months=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const sm=document.getElementById('selMonth');
+  sm.innerHTML=months.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
+  const now=new Date(); sm.value=now.getMonth()+1; document.getElementById('selYear').value=now.getFullYear();
+  let o=''; for(let h=30;h<=45;h++)o+=`<option value="${h}" ${h===35?'selected':''}>${h} h/semana</option>`;
+  const sw=document.getElementById('selWeekly'); sw.innerHTML=o; sw.addEventListener('change',updateWeeklyHint);
   updateWeeklyHint();
 }
 function updateWeeklyHint(){
-  const w = currentWeekly();
-  const d = dailyContractHours();
-  document.getElementById('weeklyHint').textContent = `${w}h → ${d}h/dia`;
-  document.getElementById('dailyContractInfo').textContent = `Base diária: ${d} h`;
+  document.getElementById('weeklyHint').textContent=`${currentWeekly()}h → ${dailyContractHours()}h/dia`;
+  document.getElementById('dailyContractInfo').textContent=`Base diária: ${dailyContractHours()} h`;
 }
 
-// ---- Banner de regras por confirmar ----
 function renderConfirmBanner(){
-  const pending = [];
-  if(PAYROLL_RULES.nightWindow.needsConfirmation)
-    pending.push(`janela de trabalho noturno (${PAYROLL_RULES.nightWindow.startHour}:00–${String(PAYROLL_RULES.nightWindow.endHour).padStart(2,'0')}:00)`);
-  if(PAYROLL_RULES.limits.needsConfirmation)
-    pending.push('limites diários/semanais');
-  Object.values(PAYROLL_RULES.codes).forEach(c=>{ if(c.needsConfirmation) pending.push(`código <span class="mono">${c.code}</span>`); });
-  const el = document.getElementById('confirmBanner');
-  if(!pending.length){ el.innerHTML=''; return; }
-  el.innerHTML = `<div class="alert warn">
-    <b>⚠️ Precisa de confirmação:</b> o repositório de origem não define regras de pagamento.
-    As seguintes regras são <b>suposições editáveis</b> em <span class="mono">PAYROLL_RULES</span> (topo do código):
-    ${[...new Set(pending)].join(', ')}.
-    <br><span class="small">Confirme estes valores com o RH/acordo coletivo e edite <span class="mono">PAYROLL_RULES</span> conforme necessário.</span>
-  </div>`;
+  const conf=[], miss=[];
+  Object.values(PAYROLL_RULES.codes).forEach(c=>{ if(c.missing)miss.push(c.desc); else if(c.confirm)conf.push(c.code); });
+  if(PAYROLL_RULES.nightWindow.confirm) conf.unshift(`janela noturna ${PAYROLL_RULES.nightWindow.startHour}:00–0${PAYROLL_RULES.nightWindow.endHour}:00`);
+  if(PAYROLL_RULES.saturdaySplitHour.confirm) conf.push(`Sábado>13h=DDC`);
+  const el=document.getElementById('confirmBanner'); let html='';
+  if(miss.length) html+=`<div class="alert err"><b>⛔ Códigos EM FALTA</b> (preencha em <span class="mono">PAYROLL_RULES.codes</span>): ${[...new Set(miss)].slice(0,12).join(' · ')}${miss.length>12?' …':''}.</div>`;
+  if(conf.length) html+=`<div class="alert warn"><b>⚠️ Precisa de confirmação:</b> ${[...new Set(conf)].join(' · ')}.</div>`;
+  el.innerHTML=html;
 }
 
-// ---- Tabs de modo de entrada ----
 function switchInputTab(mode){
-  UI.inputMode = mode;
-  document.getElementById('tabManual').classList.toggle('active', mode==='manual');
-  document.getElementById('tabPaste').classList.toggle('active', mode==='paste');
-  document.getElementById('paneManual').classList.toggle('active', mode==='manual');
-  document.getElementById('panePaste').classList.toggle('active', mode==='paste');
+  UI.inputMode=mode;
+  document.getElementById('tabManual').classList.toggle('active',mode==='manual');
+  document.getElementById('tabPaste').classList.toggle('active',mode==='paste');
+  document.getElementById('paneManual').classList.toggle('active',mode==='manual');
+  document.getElementById('panePaste').classList.toggle('active',mode==='paste');
 }
+function clearPasteBoxes(){['pastePart1','pastePart2','pastePart3'].forEach(id=>document.getElementById(id).value='');document.getElementById('parseWarnings').innerHTML='';}
 
-// ---- Construção da tabela manual ----
+/* ---- MANUAL ---- */
 function buildCalendar(){
-  const year = parseInt(document.getElementById('selYear').value,10);
-  const month = parseInt(document.getElementById('selMonth').value,10);
-  const n = daysInMonth(year, month);
-  UI.manualRows = [];
-  for(let d=1; d<=n; d++){
-    const date = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    UI.manualRows.push({date, regular:false, er:false, tn:false, overlap:false, shiftType:'', start:'', end:'', hours:null});
+  const y=+document.getElementById('selYear').value, m=+document.getElementById('selMonth').value;
+  UI.manualRows=[];
+  for(let d=1;d<=daysInMonth(y,m);d++){
+    UI.manualRows.push({date:`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+      regular:false,er:false,prevention:false,start:'',end:'',hours:null});
   }
-  renderManualTable();
-  updateWeeklyHint();
+  renderManualTable(); updateWeeklyHint();
 }
-
-const SHIFT_TYPE_OPTIONS = [
-  {v:'',           t:'—'},
-  {v:'day',        t:'ER Dia (08-20)'},
-  {v:'night',      t:'ER Noite (20-08)'},
-  {v:'h24',        t:'ER 24h (08-08)'},
-  {v:'prevention', t:'Prevenção'},
-  {v:'regular',    t:'Regular'}
-];
-
 function renderManualTable(){
-  const tb = document.querySelector('#manualTable tbody');
-  tb.innerHTML = '';
+  const tb=document.querySelector('#manualTable tbody'); tb.innerHTML='';
   UI.manualRows.forEach((r,i)=>{
-    const kind = dayKind(r.date);
-    const tr = document.createElement('tr');
-    if(kind!=='weekday') tr.style.background='#13203a';
-    const dnum = parseISO(r.date).getDate();
-    const hol = kind==='holiday' ? ` title="${holidayName(r.date)}"` : '';
-    const opts = SHIFT_TYPE_OPTIONS.map(o=>`<option value="${o.v}" ${o.v===r.shiftType?'selected':''}>${o.t}</option>`).join('');
-    tr.innerHTML = `
-      <td${hol}>${dnum}${kind==='holiday'?' 🎌':''}</td>
-      <td class="small">${weekdayShort(r.date)}</td>
+    const kind=dayKind(r.date), tr=document.createElement('tr');
+    if(kind!=='weekday')tr.style.background='#13203a';
+    tr.innerHTML=`<td>${parseISO(r.date).getDate()}${kind==='holiday'?' 🎌':''}</td><td class="small">${weekdayShort(r.date)}</td>
       <td class="center"><input type="checkbox" data-i="${i}" data-f="regular" ${r.regular?'checked':''}></td>
       <td class="center"><input type="checkbox" data-i="${i}" data-f="er" ${r.er?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-i="${i}" data-f="tn" ${r.tn?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-i="${i}" data-f="overlap" ${r.overlap?'checked':''}></td>
-      <td><select data-i="${i}" data-f="shiftType">${opts}</select></td>
+      <td class="center"><input type="checkbox" data-i="${i}" data-f="prevention" ${r.prevention?'checked':''}></td>
+      <td><input type="time" data-i="${i}" data-f="start" value="${r.start}"></td>
+      <td><input type="time" data-i="${i}" data-f="end" value="${r.end}"></td>
+      <td class="num"><input type="number" min="0" max="24" step="0.5" data-i="${i}" data-f="hours" value="${r.hours??''}"></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('input').forEach(el=>el.addEventListener('change',e=>{
+    const i=+e.target.dataset.i,f=e.target.dataset.f;
+    if(e.target.type==='checkbox')UI.manualRows[i][f]=e.target.checked;
+    else if(f==='hours')UI.manualRows[i][f]=e.target.value===''?null:parseFloat(e.target.value);
+    else UI.manualRows[i][f]=e.target.value;
+  }));
+}
+
+/* ---- PASTE -> GRELHA ---- */
+function parseAndBuildGrid(){
+  const y=+document.getElementById('selYear').value, m=+document.getElementById('selMonth').value;
+  const p1=parsePart1(document.getElementById('pastePart1').value,y,m);
+  const p2=parseSparsePart(document.getElementById('pastePart2').value,y,m,'Parte 2 (ER)');
+  const p3=parseSparsePart(document.getElementById('pastePart3').value,y,m,'Parte 3 (Prev)');
+  UI.name=p1.name;
+
+  const {dates,monthFirst,monthLast}=extendedDates(y,m);
+  UI.gridRows=dates.map(date=>{
+    const inMonth = (date>=monthFirst && date<=monthLast);
+    const roster = p1.byDate[date]?.code || '';
+    const off = roster && SHIFT_CODE_MAP[roster] && SHIFT_CODE_MAP[roster].worked===false;
+    const er = !!p2.byDate[date];
+    const prev = !!p3.byDate[date];
+    const kind=dayKind(date), isWeekday=(kind==='weekday');
+    // RW: dia útil trabalhado sem ER. Dentro do mês: roster trabalhado (ou desconhecido) e não folga.
+    //     Fora do mês (semana de fronteira): dia útil sem ER => pré-preenche RW.
+    let regular=false;
+    if(!er){
+      if(inMonth){ regular = isWeekday && !off && roster!=='' ? true : (isWeekday && !off && roster==='' ? true : false); }
+      else { regular = isWeekday; }   // dias extra de semana de fronteira
+    }
+    // horas ER/prev a partir das partes 2/3
+    let start='',end='';
+    if(er){ start=p2.byDate[date].start||''; end=p2.byDate[date].end||''; }
+    else if(prev){ start=p3.byDate[date].start||''; end=p3.byDate[date].end||''; }
+    return {date, inMonth, roster, off:!!off, regular, er, prevention:prev, start, end, hours:null,
+            note: (!inMonth?'semana fronteira':'') };
+  });
+
+  const warns=[...p1.warnings,...p2.warnings,...p3.warnings];
+  const wa=document.getElementById('parseWarnings');
+  wa.innerHTML = (UI.name?`<div class="alert info">👤 Funcionário: <b>${escapeHtml(UI.name)}</b></div>`:'')
+    + (warns.length?warns.map(w=>`<div class="alert ${w.type}">${w.msg}</div>`).join('')
+                   :`<div class="alert ok">✅ Partes analisadas sem avisos.</div>`);
+  renderGrid();
+}
+
+function renderGrid(){
+  document.getElementById('gridCard').style.display='block';
+  const tb=document.querySelector('#gridTable tbody'); tb.innerHTML='';
+  UI.gridRows.forEach((r,i)=>{
+    const kind=dayKind(r.date);
+    const cls=[ r.off?'r-off':'', kind!=='weekday'?'r-fds':'', !r.inMonth?'r-extra':'' ].filter(Boolean).join(' ');
+    const tr=document.createElement('tr'); if(cls)tr.className=cls;
+    const codeWarn = r.roster && !SHIFT_CODE_MAP[r.roster] ? ' ⚠️' : '';
+    tr.innerHTML=`<td>${formatPT(r.date)}</td><td class="small">${weekdayShort(r.date)}${kind==='holiday'?' 🎌':''}</td>
+      <td class="small mono">${escapeHtml(r.roster)}${codeWarn}</td>
+      <td class="center"><input type="checkbox" data-i="${i}" data-f="regular" ${r.regular?'checked':''}></td>
+      <td class="center"><input type="checkbox" data-i="${i}" data-f="er" ${r.er?'checked':''}></td>
+      <td class="center"><input type="checkbox" data-i="${i}" data-f="prevention" ${r.prevention?'checked':''}></td>
       <td><input type="time" data-i="${i}" data-f="start" value="${r.start}"></td>
       <td><input type="time" data-i="${i}" data-f="end" value="${r.end}"></td>
       <td class="num"><input type="number" min="0" max="24" step="0.5" data-i="${i}" data-f="hours" value="${r.hours??''}"></td>
-    `;
+      <td class="small">${r.note}</td>`;
     tb.appendChild(tr);
   });
-  // listeners (delegação)
-  tb.querySelectorAll('input,select').forEach(el=>{
-    el.addEventListener('change', e=>{
-      const i = +e.target.dataset.i, f = e.target.dataset.f;
-      if(e.target.type==='checkbox') UI.manualRows[i][f] = e.target.checked;
-      else if(f==='hours') UI.manualRows[i][f] = e.target.value==='' ? null : parseFloat(e.target.value);
-      else UI.manualRows[i][f] = e.target.value;
-      // auto-preencher início/fim ao escolher tipo de turno
-      if(f==='shiftType' && e.target.value && PAYROLL_RULES.shiftTypes[e.target.value]){
-        const st = PAYROLL_RULES.shiftTypes[e.target.value];
-        if(!UI.manualRows[i].start) UI.manualRows[i].start = st.start;
-        if(!UI.manualRows[i].end)   UI.manualRows[i].end   = st.end;
-        if(e.target.value!=='regular') UI.manualRows[i].er = true;
-        renderManualTable();
-      }
-    });
-  });
+  tb.querySelectorAll('input').forEach(el=>el.addEventListener('change',e=>{
+    const i=+e.target.dataset.i,f=e.target.dataset.f;
+    if(e.target.type==='checkbox')UI.gridRows[i][f]=e.target.checked;
+    else if(f==='hours')UI.gridRows[i][f]=e.target.value===''?null:parseFloat(e.target.value);
+    else UI.gridRows[i][f]=e.target.value;
+  }));
 }
 
-// ---- Modo colar: pré-visualização editável ----
-let previewRows = [];
-function parseAndPreview(){
-  const year = parseInt(document.getElementById('selYear').value,10);
-  const month = parseInt(document.getElementById('selMonth').value,10);
-  const text = document.getElementById('pasteBox').value;
-  const {entries, warnings} = parseMonthlyPlan(text, year, month);
-  previewRows = entries;
-
-  const w = document.getElementById('parseWarnings');
-  w.innerHTML = warnings.length
-    ? warnings.map(x=>`<div class="alert ${x.type}">${x.msg}</div>`).join('')
-    : `<div class="alert ok">✅ Todas as linhas foram interpretadas.</div>`;
-
-  const area = document.getElementById('previewArea');
-  if(!entries.length){ area.innerHTML=''; return; }
-  let rows = entries.map((r,i)=>{
-    const opts = SHIFT_TYPE_OPTIONS.map(o=>`<option value="${o.v}" ${o.v===r.shiftType?'selected':''}>${o.t}</option>`).join('');
-    return `<tr>
-      <td><input type="text" data-pi="${i}" data-f="date" value="${r.date}" style="width:110px"></td>
-      <td class="small">${/^\d{4}-\d{2}-\d{2}$/.test(r.date)?weekdayShort(r.date):'?'}</td>
-      <td class="center"><input type="checkbox" data-pi="${i}" data-f="regular" ${r.regular?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-pi="${i}" data-f="er" ${r.er?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-pi="${i}" data-f="tn" ${r.tn?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-pi="${i}" data-f="overlap" ${r.overlap?'checked':''}></td>
-      <td><select data-pi="${i}" data-f="shiftType">${opts}</select></td>
-      <td><input type="time" data-pi="${i}" data-f="start" value="${r.start}"></td>
-      <td><input type="time" data-pi="${i}" data-f="end" value="${r.end}"></td>
-      <td class="num"><input type="number" min="0" max="24" step="0.5" data-pi="${i}" data-f="hours" value="${r.hours??''}" style="width:70px"></td>
-    </tr>`;
-  }).join('');
-  area.innerHTML = `
-    <p class="small">Pré-visualização — corrija o que for necessário antes de calcular:</p>
-    <div style="overflow-x:auto;max-height:420px;overflow-y:auto">
-    <table>
-      <thead><tr><th>Data</th><th>Sem.</th><th class="center">RW</th><th class="center">ER</th>
-        <th class="center">TN</th><th class="center">Sob.</th><th>Tipo</th><th>Início</th><th>Fim</th><th class="num">Horas</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>`;
-  area.querySelectorAll('input,select').forEach(el=>{
-    el.addEventListener('change', e=>{
-      const i=+e.target.dataset.pi, f=e.target.dataset.f;
-      if(e.target.type==='checkbox') previewRows[i][f]=e.target.checked;
-      else if(f==='hours') previewRows[i][f]= e.target.value==='' ? null : parseFloat(e.target.value);
-      else previewRows[i][f]=e.target.value;
-    });
-  });
-}
-
-// ---- Recolher entradas ativas conforme o modo ----
 function collectEntries(){
-  const src = (UI.inputMode==='paste') ? previewRows : UI.manualRows;
-  // só dias com algo marcado
-  return src.filter(r=> r.regular || r.er || r.tn || r.start || r.end || (r.hours>0));
+  const src=(UI.inputMode==='paste')?UI.gridRows:UI.manualRows;
+  return src.filter(r=>r.regular||r.er||r.prevention||r.start||r.end||(r.hours>0))
+            .map(r=>({date:r.date,regular:!!r.regular,er:!!r.er,prevention:!!r.prevention,
+                     start:r.start,end:r.end,hours:r.hours,rosterCode:r.roster||'',
+                     inMonth:(r.inMonth!==false)}));
 }
 
 /* =========================================================================
-   PARTE F — CÁLCULO + RENDERIZAÇÃO DOS OUTPUTS
+   PARTE F — CALCULAR + OUTPUTS
    ========================================================================= */
 function calculate(){
-  const entries = collectEntries();
-  const meta = document.getElementById('calcMeta');
-  if(!entries.length){
-    meta.innerHTML = `<span class="alert err" style="display:inline-block">Nada para calcular: marque dias no modo selecionado (${UI.inputMode==='paste'?'colar':'manual'}).</span>`;
-    return;
-  }
-  const ctx = { weeklyHours: currentWeekly(), dailyContractHours: dailyContractHours() };
-  const result = computeMonth(entries, ctx);
-  UI.lastResult = result;
-
-  meta.innerHTML = `<span class="small">Calculado: ${entries.length} dia(s) · ${result.shifts.filter(s=>s.isER).length} turno(s) ER · base ${ctx.dailyContractHours}h/dia (${ctx.weeklyHours}h/sem)</span>`;
-
-  renderValidation(result.warnings);
-  renderSummary(result.summary);
-  renderShifts(result.shifts.filter(s=>s.isER));
+  const entries=collectEntries(), meta=document.getElementById('calcMeta');
+  if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (${UI.inputMode==='paste'?'analise as 3 partes':'preencha o manual'}).</span>`; return; }
+  const ctx={dailyContractHours:dailyContractHours()};
+  const result=computeMonth(entries,ctx); UI.lastResult=result;
+  const nER=result.shifts.filter(s=>s.isER).length;
+  meta.innerHTML=`<span class="small">${UI.name?escapeHtml(UI.name)+' · ':''}${entries.length} dia(s) · ${nER} turno(s) ER · base ${ctx.dailyContractHours}h/dia</span>`;
+  renderValidation(result.warnings); renderSummary(result.summary); renderShifts(result.shifts.filter(s=>s.isER));
 }
-
 function renderValidation(warnings){
-  const card = document.getElementById('validationCard');
-  const area = document.getElementById('validationArea');
-  card.style.display='block';
-  if(!warnings.length){
-    area.innerHTML = `<div class="alert ok">✅ Sem problemas detetados.</div>`;
-    return;
-  }
-  const errs = warnings.filter(w=>w.type==='err');
-  const warns = warnings.filter(w=>w.type!=='err');
-  area.innerHTML =
-    errs.map(w=>`<div class="alert err">⛔ ${w.msg}</div>`).join('') +
-    warns.map(w=>`<div class="alert warn">⚠️ ${w.msg}</div>`).join('');
+  document.getElementById('validationCard').style.display='block';
+  const area=document.getElementById('validationArea');
+  if(!warnings.length){area.innerHTML=`<div class="alert ok">✅ Sem problemas detetados.</div>`;return;}
+  const errs=warnings.filter(w=>w.type==='err'), warns=warnings.filter(w=>w.type!=='err');
+  area.innerHTML=errs.map(w=>`<div class="alert err">⛔ ${w.msg}</div>`).join('')+warns.map(w=>`<div class="alert warn">⚠️ ${w.msg}</div>`).join('');
 }
-
-function confirmBadge(needs){ return needs ? ` <span class="badge confirm">confirmar</span>` : ''; }
-
+function codeBadges(a){
+  let b='';
+  if(a.missing) b+=` <span class="badge missing">EM FALTA</span>`;
+  else if(a.confirm) b+=` <span class="badge confirm">confirmar</span>`;
+  return b;
+}
 function renderSummary(summary){
-  const card = document.getElementById('summaryCard');
-  card.style.display='block';
-  const tb = document.querySelector('#summaryTable tbody');
-  const tf = document.querySelector('#summaryTable tfoot');
-  if(!summary.length){ tb.innerHTML=`<tr><td colspan="6" class="muted">Sem horas.</td></tr>`; tf.innerHTML=''; return; }
-
-  tb.innerHTML = summary.map(r=>`
-    <tr>
-      <td><span class="badge code">${r.code}</span></td>
-      <td>${r.desc}${confirmBadge(r.needsConfirmation)}</td>
-      <td class="num">${r.hours.toFixed(2)}</td>
-      <td class="num">${r.isER ? r.erHours.toFixed(2) : '—'}</td>
-      <td class="num">${r.isTN ? r.tnHours.toFixed(2) : '—'}</td>
-      <td class="small">${r.isTN ? 'Acréscimo noturno (coincide com horas ER/RW)' : (r.isER ? 'Horas de ER' : 'Horas contratadas')}</td>
-    </tr>`).join('');
-
-  const totalER = summary.filter(r=>r.isER).reduce((s,r)=>s+r.hours,0);
-  const totalTN = summary.filter(r=>r.isTN).reduce((s,r)=>s+r.tnHours,0);
-  const totalAll = summary.filter(r=>!r.isTN).reduce((s,r)=>s+r.hours,0); // TN não soma (acréscimo)
-  tf.innerHTML = `
-    <tr style="font-weight:700;background:#0b1220">
-      <td colspan="2">TOTAIS</td>
-      <td class="num">${round2(totalAll).toFixed(2)}</td>
-      <td class="num">${round2(totalER).toFixed(2)}</td>
-      <td class="num">${round2(totalTN).toFixed(2)}</td>
-      <td class="small">Total de horas (sem dupla contagem de TN)</td>
-    </tr>`;
+  document.getElementById('summaryCard').style.display='block';
+  const tb=document.querySelector('#summaryTable tbody'), tf=document.querySelector('#summaryTable tfoot');
+  if(!summary.length){tb.innerHTML=`<tr><td colspan="6" class="muted">Sem horas.</td></tr>`;tf.innerHTML='';return;}
+  tb.innerHTML=summary.map(r=>`<tr>
+    <td><span class="badge code">${r.code}</span></td>
+    <td>${r.desc}${codeBadges(r)}</td>
+    <td class="num">${r.hours.toFixed(2)}</td>
+    <td class="num">${r.isER?r.erHours.toFixed(2):'—'}</td>
+    <td class="num">${r.isTN?r.tnHours.toFixed(2):'—'}</td>
+    <td class="small">${r.isTN?'Acréscimo noturno (coincide c/ ER)':(r.isER?'Horas de ER':'Horas')}</td></tr>`).join('');
+  const totER=summary.filter(r=>r.isER).reduce((s,r)=>s+r.hours,0);
+  const totTN=summary.filter(r=>r.isTN).reduce((s,r)=>s+r.tnHours,0);
+  const totAll=summary.filter(r=>!r.isTN).reduce((s,r)=>s+r.hours,0);
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAIS</td>
+    <td class="num">${round2(totAll).toFixed(2)}</td><td class="num">${round2(totER).toFixed(2)}</td>
+    <td class="num">${round2(totTN).toFixed(2)}</td><td class="small">Total sem dupla contagem de TN</td></tr>`;
 }
-
 function renderShifts(shifts){
-  const card = document.getElementById('shiftsCard');
-  card.style.display='block';
-  const area = document.getElementById('shiftsArea');
-  if(!shifts.length){ area.innerHTML=`<div class="muted">Nenhum turno ER no período.</div>`; return; }
-
-  area.innerHTML = shifts.map(s=>{
-    const allocs = s.allocations.map(a=>{
-      const c = PAYROLL_RULES.codes[a.key];
-      const cls = a.key==='TN'?'tn':(a.key==='RW'?'reg':'er');
+  document.getElementById('shiftsCard').style.display='block';
+  const area=document.getElementById('shiftsArea');
+  if(!shifts.length){area.innerHTML=`<div class="muted">Nenhum turno ER no período.</div>`;return;}
+  area.innerHTML=shifts.map(s=>{
+    const allocs=s.allocations.map(a=>{
+      const cls=a.isTN?'tn':(a.key==='RW'?'reg':(a.key==='PREV'?'prev':'er'));
       return `<span class="splitline"><span class="pill ${cls}">${a.code}</span>
-        <span class="small">${a.desc}${confirmBadge(c.needsConfirmation)} → <b>${a.hours.toFixed(2)} h</b></span></span>`;
+        <span class="small">${a.desc}${codeBadges(a)} → <b>${a.hours.toFixed(2)} h</b></span></span>`;
     }).join('');
-    const w = s.warnings.length
-      ? `<div style="margin-top:6px">${s.warnings.map(x=>`<div class="alert ${x.type}" style="margin:4px 0">${x.msg}</div>`).join('')}</div>`
-      : '';
+    const w=s.warnings.length?`<div style="margin-top:6px">${s.warnings.map(x=>`<div class="alert ${x.type}" style="margin:4px 0">${x.msg}</div>`).join('')}</div>`:'';
     return `<div class="shiftcard ${s.isFds?'fds':'weekday'}">
       <h3>📅 ${formatPT(s.date)} · <span class="muted">${s.weekday}</span>
         ${s.holiday?`<span class="badge" style="border-color:var(--err);color:#fecaca">${s.holiday}</span>`:''}
-        ${s.isFds?'<span class="badge">FDS/Feriado</span>':'<span class="badge">Dia útil</span>'}
-      </h3>
+        ${s.isFds?'<span class="badge">FDS/Feriado</span>':'<span class="badge">Dia útil</span>'}</h3>
       <div class="kv">
-        <span>Início: <b>${s.start||'—'}</b></span>
-        <span>Fim: <b>${s.end||'—'}</b></span>
+        <span>Início: <b>${s.start||'—'}</b></span><span>Fim: <b>${s.end||'—'}</b></span>
         <span>Total ER: <b>${(s.erDayH+s.erNightH).toFixed(2)} h</b></span>
-        <span>TN dentro do turno: <b>${s.tnH.toFixed(2)} h</b></span>
-        <span>Regular dentro do turno: <b>${s.regularInside.toFixed(2)} h</b></span>
-      </div>
-      <div class="small muted">Repartição por código de pagamento:</div>
-      ${allocs}
-      ${w}
-    </div>`;
+        <span>TN no turno: <b>${s.tnH.toFixed(2)} h</b></span>
+        <span>Diurno/Noturno: <b>${s.erDayH.toFixed(2)} / ${s.erNightH.toFixed(2)} h</b></span></div>
+      <div class="small muted">Repartição por código de pagamento:</div>${allocs}${w}</div>`;
   }).join('');
 }
-
-// formatação de data PT — adaptado do repo
-function formatPT(dateISO){
-  const [y,m,d] = dateISO.split('-');
-  return `${d}/${m}/${y}`;
-}
+function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
 /* =========================================================================
-   PARTE G — EXPORTAÇÃO (copiar / CSV / imprimir)
+   PARTE G — EXPORTAÇÃO
    ========================================================================= */
-function copyToClipboard(text, okMsg){
-  navigator.clipboard.writeText(text).then(
-    ()=>toast(okMsg||'Copiado!'),
-    ()=>toast('Falha ao copiar.', true)
-  );
-}
-function toast(msg, isErr){
-  const t = document.createElement('div');
-  t.textContent = msg;
-  t.style.cssText = `position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-    background:${isErr?'var(--err)':'var(--ok)'};color:#06283b;padding:10px 18px;border-radius:10px;
-    font-weight:700;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.4)`;
-  document.body.appendChild(t);
-  setTimeout(()=>t.remove(),1800);
-}
-
-function summaryToText(){
-  if(!UI.lastResult) return '';
-  const lines = ['Código\tDescrição\tHoras\tHoras ER\tHoras TN'];
-  UI.lastResult.summary.forEach(r=>{
-    lines.push(`${r.code}\t${r.desc}\t${r.hours.toFixed(2)}\t${r.isER?r.erHours.toFixed(2):''}\t${r.isTN?r.tnHours.toFixed(2):''}`);
-  });
-  return lines.join('\n');
-}
-function shiftsToText(){
-  if(!UI.lastResult) return '';
-  const lines = ['Data\tDia\tInício\tFim\tTotal ER\tTN\tRegular\tCódigos (horas)'];
-  UI.lastResult.shifts.filter(s=>s.isER).forEach(s=>{
-    const codes = s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
-    lines.push(`${formatPT(s.date)}\t${s.weekday}\t${s.start}\t${s.end}\t${(s.erDayH+s.erNightH).toFixed(2)}\t${s.tnH.toFixed(2)}\t${s.regularInside.toFixed(2)}\t${codes}`);
-  });
-  return lines.join('\n');
-}
-function copySummary(){ copyToClipboard(summaryToText(),'Resumo copiado!'); }
-function copyShifts(){ copyToClipboard(shiftsToText(),'Detalhe copiado!'); }
-
+function toast(msg,err){const t=document.createElement('div');t.textContent=msg;
+  t.style.cssText=`position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:${err?'var(--err)':'var(--ok)'};color:#06283b;padding:10px 18px;border-radius:10px;font-weight:700;z-index:99`;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),1800);}
+function copyToClipboard(text,ok){navigator.clipboard.writeText(text).then(()=>toast(ok||'Copiado!'),()=>toast('Falha ao copiar.',true));}
+function summaryToText(){if(!UI.lastResult)return '';const L=['Código\tDescrição\tHoras\tER\tTN'];
+  UI.lastResult.summary.forEach(r=>L.push(`${r.code}\t${r.desc}\t${r.hours.toFixed(2)}\t${r.isER?r.erHours.toFixed(2):''}\t${r.isTN?r.tnHours.toFixed(2):''}`));return L.join('\n');}
+function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício\tFim\tTotalER\tTN\tCódigos(horas)'];
+  UI.lastResult.shifts.filter(s=>s.isER).forEach(s=>{const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
+    L.push(`${formatPT(s.date)}\t${s.weekday}\t${s.start}\t${s.end}\t${(s.erDayH+s.erNightH).toFixed(2)}\t${s.tnH.toFixed(2)}\t${c}`);});return L.join('\n');}
+function copySummary(){copyToClipboard(summaryToText(),'Resumo copiado!');}
+function copyShifts(){copyToClipboard(shiftsToText(),'Detalhe copiado!');}
 function exportCSV(which){
-  if(!UI.lastResult){ toast('Calcule primeiro.', true); return; }
-  const sep=';';
-  let csv, name;
+  if(!UI.lastResult){toast('Calcule primeiro.',true);return;}
+  const sep=';'; let csv,name;
   if(which==='summary'){
-    csv = 'Codigo;Descricao;Horas;Horas ER;Horas TN\n' +
-      UI.lastResult.summary.map(r=>[r.code,`"${r.desc}"`,r.hours.toFixed(2),
-        r.isER?r.erHours.toFixed(2):'', r.isTN?r.tnHours.toFixed(2):''].join(sep)).join('\n');
+    csv='Codigo;Descricao;Horas;ER;TN\n'+UI.lastResult.summary.map(r=>[r.code,`"${r.desc}"`,r.hours.toFixed(2),r.isER?r.erHours.toFixed(2):'',r.isTN?r.tnHours.toFixed(2):''].join(sep)).join('\n');
     name='resumo_er_tn.csv';
   } else {
-    csv = 'Data;Dia;Inicio;Fim;Total ER;TN;Regular;Codigos\n' +
-      UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
-        const codes = s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
-        return [formatPT(s.date),s.weekday,s.start,s.end,(s.erDayH+s.erNightH).toFixed(2),
-          s.tnH.toFixed(2),s.regularInside.toFixed(2),`"${codes}"`].join(sep);
-      }).join('\n');
+    csv='Data;Dia;Inicio;Fim;TotalER;TN;Codigos\n'+UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
+      const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
+      return [formatPT(s.date),s.weekday,s.start,s.end,(s.erDayH+s.erNightH).toFixed(2),s.tnH.toFixed(2),`"${c}"`].join(sep);}).join('\n');
     name='detalhe_er_tn.csv';
   }
-  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = name; a.click();
-  URL.revokeObjectURL(a.href);
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);
 }
 
-/* =========================================================================
-   ARRANQUE
-   ========================================================================= */
-document.getElementById('btnBuildCalendar').addEventListener('click', buildCalendar);
-document.getElementById('selMonth').addEventListener('change', buildCalendar);
-document.getElementById('selYear').addEventListener('change', buildCalendar);
-
-initSelectors();
-renderConfirmBanner();
-buildCalendar();
+/* ---- arranque ---- */
+document.getElementById('btnBuildCalendar').addEventListener('click',buildCalendar);
+document.getElementById('selMonth').addEventListener('change',buildCalendar);
+document.getElementById('selYear').addEventListener('change',buildCalendar);
+initSelectors(); renderConfirmBanner(); buildCalendar();
 </script>
 </body>
 </html>
