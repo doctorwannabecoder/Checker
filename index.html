@@ -390,6 +390,13 @@ const ER_MULTIPLIER = {
 // SUPOSIÇÃO: 25% (Código do Trabalho). Confirmar para a carreira médica.
 const TN_UPLIFT = { pct:0.25, confirm:true };
 
+/* Valor/hora base do trabalho EXTRAORDINÁRIO (ER). VALIDADO com o recibo de
+   maio (Assistente geral): R = vencimento_base × 12 / 2600 = 3538,87×12/2600 =
+   16,333 €/h. Os multiplicadores SIM (×1,25…×2,5) aplicam-se sobre este valor.
+   NB: difere da "valor/hora" normal (÷2080). Divisor 2600 confirmado só para
+   Assistente geral — confirmar para outras categorias/regimes. */
+const ER_HOURLY_DIVISOR = { value:2600, confirm:true };
+
 /* =========================================================================
    PARTE B — UTILITÁRIOS DE DATA / FERIADOS  (REUTILIZADO do scheduler)
    ========================================================================= */
@@ -873,8 +880,10 @@ function currentSalary(){
   const cat=SALARY_TABLE[currentCategory()]; if(!cat) return {m:0,h:0};
   return cat.regimes[currentRegime()] || cat.regimes[Object.keys(cat.regimes)[0]] || {m:0,h:0};
 }
-function currentHourly(){return currentSalary().h||0;}
+function currentHourly(){return currentSalary().h||0;} // €/hora "normal" da tabela SIM (÷2080)
 function currentMonthlyBase(){return currentSalary().m||0;}
+// €/hora do trabalho extraordinário (ER) — base dos multiplicadores. VALIDADO (recibo maio).
+function erHourly(){return round2(currentMonthlyBase()*12/ER_HOURLY_DIVISOR.value);}
 function eur(n){return (Math.round((n+Number.EPSILON)*100)/100).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
 
 // Preenche o seletor de regime conforme a categoria (IFE só tem "geral").
@@ -906,7 +915,7 @@ function updateWeeklyHint(){
   document.getElementById('weeklyHint').textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
   document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h · base diária ${dailyContractHours()} h`;
   const sh=document.getElementById('salaryHint');
-  if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · ${eur(currentHourly())}/hora`;
+  if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/h ER ${eur(erHourly())} (normal ${eur(currentHourly())})`;
 }
 
 function renderConfirmBanner(){
@@ -1142,7 +1151,7 @@ function collectEntries(){
 function calculate(){
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
   if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (${UI.inputMode==='paste'?'importe o PDF ou preencha a grelha':'preencha o manual'}).</span>`; return; }
-  const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:currentHourly()};
+  const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:erHourly()};
   const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
   const nER=result.shifts.filter(s=>s.isER).length;
   meta.innerHTML=`<span class="small">${UI.name?escapeHtml(UI.name)+' · ':''}${SALARY_TABLE[currentCategory()].label} (${REGIME_LABELS[currentRegime()]}) · ${nER} turno(s) ER · extra ${eur(result.totalExtraEur)}</span>`;
