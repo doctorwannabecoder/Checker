@@ -260,8 +260,9 @@
    (badge vermelho "EM FALTA"); preencha o número e ponha missing:false.
    ========================================================================= */
 const PAYROLL_RULES = {
-  // Janela legal de Trabalho Noturno (TN). SUPOSIÇÃO: 22:00–07:00 (Cód. Trabalho PT).
-  nightWindow: { startHour: 22, endHour: 7, confirm:true },
+  // Janela de Trabalho Noturno (TN) para médicos: 20:00–08:00 (Tabela SIM /
+  // "para médicos sindicalizados"). Diurno = 08:00–20:00 (inclui Sáb 08:00–13:00).
+  nightWindow: { startHour: 20, endHour: 8, confirm:false },
   // Sábado: a partir desta hora conta como DDC (descanso complementar); antes conta como dia útil. SUPOSIÇÃO.
   saturdaySplitHour: { hour: 13, confirm:true },
   // "1ª hora": duração (min) que bilha sob o código "1ª"; o resto do turno bilha sob "seguintes".
