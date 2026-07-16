@@ -140,13 +140,15 @@
     <div class="row">
       <label>Mês <select id="selMonth"></select></label>
       <label>Ano <input type="number" id="selYear" min="2000" max="2100" step="1" style="width:100px"/></label>
-      <label>Tempo de trabalho semanal contratado <select id="selWeekly"></select></label>
+      <label>Horário semanal base <select id="selWeeklyBase"></select></label>
+      <label>Redução de horário (legal) <select id="selWeeklyRed"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small" id="dailyContractInfo"></span></label>
       <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
     </div>
-    <p class="small">As horas semanais (30–45h) definem a base diária contratada
-      (<span class="mono" id="weeklyHint"></span>) usada para o Trabalho Regular e para validar limites semanais.
-      O cálculo de ER/TN considera <b>semanas completas</b> (estende a Seg–Dom nas fronteiras do mês).</p>
+    <p class="small">O horário base (40 ou 42h) menos a redução legal (0–7h) dá o
+      <b>horário semanal efetivo</b> (<span class="mono" id="weeklyHint"></span>), que define a base diária
+      contratada e valida os limites semanais. O cálculo de ER/TN considera <b>semanas completas</b>
+      (estende a Seg–Dom nas fronteiras do mês).</p>
   </div>
 
   <!-- 2 · entrada -->
@@ -154,7 +156,7 @@
     <h2>2 · Entrada do plano mensal</h2>
     <div class="tabs">
       <button id="tabManual" onclick="switchInputTab('manual')">✍️ Inserção manual</button>
-      <button id="tabPaste" class="active" onclick="switchInputTab('paste')">📋 Colar (3 partes)</button>
+      <button id="tabPaste" class="active" onclick="switchInputTab('paste')">📄 Importar PDF</button>
     </div>
 
     <!-- PASTE: 3 partes -->
@@ -172,36 +174,6 @@
           <label>O seu nome <select id="pdfEmpSel" onchange="applyPdfEmployee()" style="min-width:240px"></select></label>
         </div>
       </div>
-      <details style="margin-bottom:12px">
-        <summary>Em alternativa: colar manualmente em 3 partes</summary>
-      <div class="grid3" style="margin-top:10px">
-        <div>
-          <label>Parte 1 — Escala-base (nome + 1 código/dia)
-            <textarea id="pastePart1" placeholder="Bruno Tiago Alves Carvalho M256 Fr D F M256 ..."></textarea>
-          </label>
-          <p class="small">1.º código = <b>último dia do mês anterior</b>; seguem-se os dias do mês.
-            Códigos de folga/descanso/férias (ex.: <span class="mono">D F Fr</span>) não contam como trabalho;
-            dias úteis trabalhados sem ER ficam como Regular.</p>
-        </div>
-        <div>
-          <label>Parte 2 — Turnos ER (esparso)
-            <textarea id="pastePart2" placeholder="Prefixe o DIA:&#10;3 20:00-08:00&#10;7 08:00-20:00&#10;12 24h"></textarea>
-          </label>
-          <p class="small">Como o texto não tem tabulações, <b>prefixe cada linha com o número do dia</b>
-            para alinhar (ex.: <span class="mono">3 20:00-08:00</span>). Sem hora, defina depois na grelha.</p>
-        </div>
-        <div>
-          <label>Parte 3 — Prevenções (esparso)
-            <textarea id="pastePart3" placeholder="Prefixe o DIA:&#10;5 prev&#10;19 prev"></textarea>
-          </label>
-          <p class="small">Idem: <span class="mono">5 prev</span> ou <span class="mono">5 20:00-08:00</span>.</p>
-        </div>
-      </div>
-      <div class="toolbar" style="margin-top:10px">
-        <button class="btn" onclick="parseAndBuildGrid()">🔍 Analisar e montar grelha</button>
-        <button class="btn secondary" onclick="clearPasteBoxes()">Limpar</button>
-      </div>
-      </details>
       <div id="parseWarnings"></div>
     </div>
 
@@ -815,7 +787,10 @@ let UI = { inputMode:'paste', manualRows:[], gridRows:[], lastResult:null, name:
 let PDF_DATA=null;     // resultado de structurePdf()
 let PDF_LEGEND={};     // legenda lida do PDF (código -> {start,end,hours,worked})
 
-function currentWeekly(){return parseInt(document.getElementById('selWeekly').value,10);}
+// Horário base (40/42) menos redução legal (0–7) = horário semanal efetivo.
+function weeklyBase(){return parseInt(document.getElementById('selWeeklyBase').value,10);}
+function weeklyReduction(){return parseInt(document.getElementById('selWeeklyRed').value,10)||0;}
+function currentWeekly(){return Math.max(0, weeklyBase()-weeklyReduction());}
 function dailyContractHours(){return round2(currentWeekly()/5);} // SUPOSIÇÃO: 5 dias/semana
 
 function initSelectors(){
@@ -823,13 +798,17 @@ function initSelectors(){
   const sm=document.getElementById('selMonth');
   sm.innerHTML=months.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
   const now=new Date(); sm.value=now.getMonth()+1; document.getElementById('selYear').value=now.getFullYear();
-  let o=''; for(let h=30;h<=45;h++)o+=`<option value="${h}" ${h===35?'selected':''}>${h} h/semana</option>`;
-  const sw=document.getElementById('selWeekly'); sw.innerHTML=o; sw.addEventListener('change',updateWeeklyHint);
+  const sb=document.getElementById('selWeeklyBase');
+  sb.innerHTML=[40,42].map(h=>`<option value="${h}" ${h===40?'selected':''}>${h} h/semana</option>`).join('');
+  let red=''; for(let r=0;r<=7;r++)red+=`<option value="${r}">${r===0?'sem redução':('−'+r+' h')}</option>`;
+  const sr=document.getElementById('selWeeklyRed'); sr.innerHTML=red;
+  sb.addEventListener('change',updateWeeklyHint); sr.addEventListener('change',updateWeeklyHint);
   updateWeeklyHint();
 }
 function updateWeeklyHint(){
-  document.getElementById('weeklyHint').textContent=`${currentWeekly()}h → ${dailyContractHours()}h/dia`;
-  document.getElementById('dailyContractInfo').textContent=`Base diária: ${dailyContractHours()} h`;
+  const base=weeklyBase(), red=weeklyReduction(), eff=currentWeekly();
+  document.getElementById('weeklyHint').textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
+  document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h · base diária ${dailyContractHours()} h`;
 }
 
 function renderConfirmBanner(){
