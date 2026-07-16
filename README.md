@@ -1,5 +1,7 @@
 # Verificador de ER / TN
 
+**▶ Aplicação online: https://doctorwannabecoder.github.io/Checker/**
+
 Ferramenta autónoma (um único ficheiro `index.html`) para o trabalhador
 **conferir se as horas de ER (Escala de Recurso) e TN (Trabalho Noturno)
 foram corretamente pagas** num determinado mês.
