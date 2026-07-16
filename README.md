@@ -12,16 +12,19 @@ Basta abrir o `index.html`.
 1. Abrir `index.html` (duplo-clique) ou publicar via **GitHub Pages**
    (Settings → Pages → branch `main`) e abrir o link.
 2. Escolher **mês/ano** e o **tempo de trabalho semanal contratado** (30–45 h).
-3. Inserir o plano mensal de uma de duas formas:
-   - **Colar (3 partes)** — os dados vêm de 3 sítios diferentes, por isso há
-     três caixas, coladas uma a uma:
-     - **Parte 1 — escala-base:** `nome + 1 código por dia`. O **1.º código é o
-       último dia do mês anterior**; seguem-se os dias do mês. Códigos de
-       folga/descanso/férias (`D`, `F`, `Fr`) não contam como trabalho.
-     - **Parte 2 — turnos ER** (esparso).
-     - **Parte 3 — prevenções** (esparso).
-   - **Inserção manual** — marcar por dia: RW / ER / Prev + início/fim/horas.
-4. Clicar **Analisar e montar grelha**, corrigir a grelha por dia se preciso.
+3. Inserir o plano mensal. **Forma recomendada — importar o PDF:**
+   - Clicar **📄 Escolher PDF…** e selecionar o horário (PDF do SISQUAL/PDFsharp).
+   - A app lê **automaticamente**: o mês, a **legenda** (código → janela/horas),
+     e as **3 secções** — `Rotina` (trabalho regular), `Urgência Externa` (ER) e
+     `Prevenção`. Escolhe-se o **nome** numa lista e a grelha é preenchida.
+   - Só funciona com PDFs de **texto** (não digitalizações). Nada é enviado para
+     fora — a leitura é 100% no navegador.
+
+   **Em alternativa — colar (3 partes)** (secção recolhível): três caixas
+   coladas uma a uma — Parte 1 = escala-base (`nome + 1 código/dia`, 1.º código =
+   último dia do mês anterior), Parte 2 = ER, Parte 3 = prevenções. Ou
+   **inserção manual** por dia.
+4. **Verificar/corrigir a grelha** (cada dia já alinhado) e ajustar o que faltar.
 5. Clicar **Calcular pagamento**.
 
 ### O problema dos espaços em branco (Partes 2/3)

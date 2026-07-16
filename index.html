@@ -159,7 +159,22 @@
 
     <!-- PASTE: 3 partes -->
     <div id="panePaste" class="pane active">
-      <div class="grid3">
+      <!-- IMPORTAR PDF (recomendado) -->
+      <div style="border:1px solid var(--accent);border-radius:10px;padding:12px;margin-bottom:14px;background:#0b2233">
+        <div style="font-weight:700;color:var(--accent2);margin-bottom:6px">📄 Importar PDF do horário (recomendado)</div>
+        <div class="row">
+          <label class="btn" style="cursor:pointer">📂 Escolher PDF…
+            <input type="file" accept="application/pdf,.pdf" id="pdfFile" style="display:none" onchange="onPdfFile(event)">
+          </label>
+          <span class="small" id="pdfStatus">Lê automaticamente a legenda e as 3 secções (Rotina / Urgência Externa / Prevenção). Só funciona com PDFs de <b>texto</b> (SISQUAL/PDFsharp), não com digitalizações.</span>
+        </div>
+        <div id="pdfPicker" style="display:none;margin-top:10px">
+          <label>O seu nome <select id="pdfEmpSel" onchange="applyPdfEmployee()" style="min-width:240px"></select></label>
+        </div>
+      </div>
+      <details style="margin-bottom:12px">
+        <summary>Em alternativa: colar manualmente em 3 partes</summary>
+      <div class="grid3" style="margin-top:10px">
         <div>
           <label>Parte 1 — Escala-base (nome + 1 código/dia)
             <textarea id="pastePart1" placeholder="Bruno Tiago Alves Carvalho M256 Fr D F M256 ..."></textarea>
@@ -186,6 +201,7 @@
         <button class="btn" onclick="parseAndBuildGrid()">🔍 Analisar e montar grelha</button>
         <button class="btn secondary" onclick="clearPasteBoxes()">Limpar</button>
       </div>
+      </details>
       <div id="parseWarnings"></div>
     </div>
 
@@ -630,9 +646,174 @@ function extendedDates(year, month){
 }
 
 /* =========================================================================
+   PARTE D-bis — IMPORTAÇÃO DE PDF (SISQUAL / PDFsharp), sem biblioteca
+   -------------------------------------------------------------------------
+   Funciona apenas com PDFs de TEXTO digital (não digitalizações). Lê o texto
+   e as COORDENADAS de cada célula (via matrizes CTM/Tm) para alinhar colunas
+   (dias) e linhas (funcionários) de forma fiável.
+   ========================================================================= */
+function pdfBytesToLatin1(u8){
+  let s=''; const CH=8192;
+  for(let i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null,u8.subarray(i,Math.min(i+CH,u8.length)));
+  return s;
+}
+// matriz [a,b,c,d,e,f]; ponto (x,y) -> (a x + c y + e, b x + d y + f)
+function matMul(m1,m2){return [
+  m1[0]*m2[0]+m1[1]*m2[2], m1[0]*m2[1]+m1[1]*m2[3],
+  m1[2]*m2[0]+m1[3]*m2[2], m1[2]*m2[1]+m1[3]*m2[3],
+  m1[4]*m2[0]+m1[5]*m2[2]+m2[4], m1[4]*m2[1]+m1[5]*m2[3]+m2[5]];}
+function matApply(m,x,y){return [m[0]*x+m[2]*y+m[4], m[1]*x+m[3]*y+m[5]];}
+
+// Extrai apenas os content streams legíveis (que contêm BT/Tj); ignora a
+// imagem FlateDecode (logótipo).
+function pdfContentStreams(latin1){
+  const out=[]; const re=/stream\r?\n/g; let m;
+  while((m=re.exec(latin1))){
+    const start=m.index+m[0].length;
+    const end=latin1.indexOf('endstream',start);
+    if(end<0) break;
+    const body=latin1.slice(start,end);
+    if(body.indexOf('BT')>=0 && body.indexOf('Tj')>=0) out.push(body);
+    re.lastIndex=end+9;
+  }
+  // alguns PDFs têm o conteúdo fora de stream; se nada apanhado, usar tudo
+  return out.length?out.join('\n'):latin1;
+}
+
+// Interpreta o content stream e devolve fragmentos {x,y,text}.
+function extractPdfFragments(content){
+  const frags=[]; let i=0; const n=content.length;
+  let ctm=[1,0,0,1,0,0]; const gstack=[];
+  let tm=[1,0,0,1,0,0], tlm=[1,0,0,1,0,0];
+  let ops=[];
+  function readString(){
+    i++; let depth=1,out='';
+    while(i<n && depth>0){ const c=content[i];
+      if(c==='\\'){ const nx=content[i+1];
+        if(nx>='0'&&nx<='7'){ let oct=nx;i+=2; for(let k=0;k<2&&content[i]>='0'&&content[i]<='7';k++){oct+=content[i];i++;} out+=String.fromCharCode(parseInt(oct,8)); continue; }
+        const mp={'n':'\n','r':'\r','t':'\t','b':'\b','f':'\f','(':'(',')':')','\\':'\\'};
+        out+=(mp[nx]!==undefined?mp[nx]:nx); i+=2; continue; }
+      if(c==='('){ depth++; out+=c; i++; continue; }
+      if(c===')'){ depth--; if(depth>0)out+=c; i++; continue; }
+      out+=c; i++;
+    }
+    return out;
+  }
+  while(i<n){
+    const c=content[i];
+    if(c==='('){ ops.push({t:'str',v:readString()}); continue; }
+    if(c==='<'){ if(content[i+1]==='<'){i+=2;ops=[];continue;} const j=content.indexOf('>',i); ops.push({t:'str',v:''}); i=(j<0?n:j+1); continue; }
+    if(c==='>'){ i++; continue; }
+    if(c==='/'){ let j=i+1; while(j<n && !/[\s()<>\[\]{}\/]/.test(content[j])) j++; ops.push({t:'name'}); i=j; continue; }
+    if(c==='['||c===']'){ i++; continue; }
+    if(/\s/.test(c)){ i++; continue; }
+    if(c==='-'||c==='.'||(c>='0'&&c<='9')){ let j=i; while(j<n && /[-.\d]/.test(content[j])) j++; ops.push({t:'num',v:parseFloat(content.slice(i,j))}); i=j; continue; }
+    let j=i; while(j<n && /[A-Za-z*'"]/.test(content[j])) j++;
+    const op=content.slice(i,j); if(!op){ i++; continue; } i=j;
+    const nums=ops.filter(o=>o.t==='num').map(o=>o.v);
+    if(op==='q') gstack.push(ctm.slice());
+    else if(op==='Q'){ if(gstack.length) ctm=gstack.pop(); }
+    else if(op==='cm'){ if(nums.length>=6) ctm=matMul(nums.slice(-6),ctm); }
+    else if(op==='BT'){ tm=[1,0,0,1,0,0]; tlm=tm.slice(); }
+    else if(op==='Td'||op==='TD'){ if(nums.length>=2){ const d=nums.slice(-2); tlm=matMul([1,0,0,1,d[0],d[1]],tlm); tm=tlm.slice(); } }
+    else if(op==='Tm'){ if(nums.length>=6){ tlm=nums.slice(-6); tm=tlm.slice(); } }
+    else if(op==='T*'){ tm=tlm.slice(); }
+    else if(op==='Tj'){ const s=[...ops].reverse().find(o=>o.t==='str'); if(s){ const trm=matMul(tm,ctm); const p=matApply(trm,0,0); frags.push({x:p[0],y:p[1],text:s.v}); } }
+    ops=[];
+  }
+  return frags;
+}
+
+// Atribui cada fragmento de uma linha à coluna-dia mais próxima (por X).
+function cellsForRow(rowFrags, dayColsX){
+  const cells=dayColsX.map(()=>'');
+  const lastX=dayColsX[dayColsX.length-1];
+  for(const f of rowFrags){
+    if(f.x < dayColsX[0]-8 || f.x > lastX+14) continue;   // ignora nome/nº/saldos
+    let bi=0,bd=1e9;
+    for(let i=0;i<dayColsX.length;i++){ const d=Math.abs(f.x-dayColsX[i]); if(d<bd){bd=d;bi=i;} }
+    if(bd<10){ const t=f.text.trim(); if(t) cells[bi]=(cells[bi]?cells[bi]+' ':'')+t; }
+  }
+  return cells;
+}
+
+// Lê a LEGENDA do PDF -> { codigoBase: {start,end,hours,worked,desc} }.
+function parsePdfLegend(frags){
+  const texts=frags.map(f=>f.text.trim());
+  let s=texts.indexOf('Espaço'); if(s<0) s=0;
+  let e=texts.findIndex(t=>/Generated by SISQUAL/i.test(t)); if(e<0) e=texts.length;
+  const seg=frags.slice(s,e);
+  const map={};
+  const isCode=(t)=> t==='Prv N' || t==='0' ||
+    /^(?:½?[A-Za-zºÀ-ÿ]{1,4}\d{0,3}(?:\(\d+(?::\d+)?\))?)$/.test(t);
+  const absenceRe=/(Folga|Férias|Descanso|Doença|Compensa|Dispensa|Comiss|Passivo|Toler[aâ]ncia|Bolsa|Identificada|Horas Extra)/i;
+  let pending=null;
+  for(const f of seg){
+    const t=(f.text||'').trim();
+    if(!t || t==='Espaço'){ continue; }
+    if(isCode(t)){ pending=t; continue; }
+    // t é descrição -> associa ao código pendente
+    if(pending){
+      const base=pending.replace(/\s*\(.*\)\s*$/,'').trim();
+      const win=/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/.exec(t);
+      let start='',end='',hours=null;
+      if(win){ start=`${win[1].padStart(2,'0')}:${win[2]}`; end=`${win[3].padStart(2,'0')}:${win[4]}`; }
+      const ann=/\((\d+)(?::(\d+))?\)\s*$/.exec(pending);
+      if(ann){ hours=parseInt(ann[1],10)+(ann[2]?parseInt(ann[2],10)/60:0); }
+      const absence=absenceRe.test(t);
+      const worked=(!!win || hours>0 || /Isen[çc][aã]o/i.test(t)) && !absence;
+      if(!map[base]) map[base]={start,end,hours,worked,desc:t};
+      pending=null;
+    }
+  }
+  return map;
+}
+
+// Estrutura o PDF -> {month, year, monthLabel, dayColsX, employees[{num,name,rota,urg,prev}]}.
+function structurePdf(frags){
+  const monthsPT={janeiro:1,fevereiro:2,marco:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12};
+  let month=null,year=null,monthLabel='';
+  for(const f of frags){ const m=/^([A-Za-zçÇÀ-ÿ]+)\s+de\s+(\d{4})$/.exec(f.text.trim());
+    if(m){ const key=stripAccents(m[1].toLowerCase()); if(monthsPT[key]){ month=monthsPT[key]; year=+m[2]; monthLabel=f.text.trim(); break; } } }
+  if(!month) return null;
+  // linha dos números de dia (contém algo como "1-mai")
+  let dayY=null;
+  for(const f of frags){ if(/^\d{1,2}-[a-zç]{3}$/i.test(f.text.trim())){ dayY=f.y; break; } }
+  if(dayY==null){
+    const byY={}; frags.forEach(f=>{ if(/^\d{1,2}$/.test(f.text.trim())){ const k=Math.round(f.y); (byY[k]=byY[k]||[]).push(f);} });
+    let best=null; Object.values(byY).forEach(a=>{ if(!best||a.length>best.length)best=a; });
+    if(best&&best.length) dayY=best[0].y;
+  }
+  if(dayY==null) return null;
+  const dayFrags=frags.filter(f=>Math.abs(f.y-dayY)<2 && /^(\d{1,2}|\d{1,2}-[a-zç]{3})$/i.test(f.text.trim())).sort((a,b)=>a.x-b.x);
+  const dayColsX=dayFrags.map(f=>f.x);
+  if(dayColsX.length<2) return null;
+  const secHeaders=frags.filter(f=>/^(Rotina|Urgência Externa|Prevenção)$/.test(f.text.trim())).map(f=>({name:f.text.trim(),y:f.y}));
+  function sectionForY(y){ const c=secHeaders.filter(s=>s.y>y+1); if(!c.length)return null; return c.reduce((a,b)=>a.y<b.y?a:b).name; }
+  const numFrags=frags.filter(f=>f.x<50 && /^\d{4,6}$/.test(f.text.trim()));
+  const employees=[]; const byNum={};
+  numFrags.forEach(nf=>{
+    const y=nf.y, num=nf.text.trim();
+    const nameFrag=frags.find(f=>Math.abs(f.y-y)<2 && f.x>60 && f.x<145 && /[A-Za-zÀ-ÿ]{2,}/.test(f.text));
+    const name=nameFrag?nameFrag.text.trim():('#'+num);
+    const sec=sectionForY(y);
+    const rowFrags=frags.filter(f=>Math.abs(f.y-y)<2.5);
+    const cells=cellsForRow(rowFrags,dayColsX);
+    if(!byNum[num]){ byNum[num]={num,name,rota:[],urg:[],prev:[]}; employees.push(byNum[num]); }
+    if(sec==='Rotina') byNum[num].rota=cells;
+    else if(sec==='Urgência Externa') byNum[num].urg=cells;
+    else if(sec==='Prevenção') byNum[num].prev=cells;
+    if(byNum[num].name.startsWith('#') && !name.startsWith('#')) byNum[num].name=name;
+  });
+  return {month,year,monthLabel,dayColsX,employees};
+}
+
+/* =========================================================================
    PARTE E — UI: estado + seletores + grelha
    ========================================================================= */
 let UI = { inputMode:'paste', manualRows:[], gridRows:[], lastResult:null, name:'' };
+let PDF_DATA=null;     // resultado de structurePdf()
+let PDF_LEGEND={};     // legenda lida do PDF (código -> {start,end,hours,worked})
 
 function currentWeekly(){return parseInt(document.getElementById('selWeekly').value,10);}
 function dailyContractHours(){return round2(currentWeekly()/5);} // SUPOSIÇÃO: 5 dias/semana
@@ -670,6 +851,107 @@ function switchInputTab(mode){
   document.getElementById('panePaste').classList.toggle('active',mode==='paste');
 }
 function clearPasteBoxes(){['pastePart1','pastePart2','pastePart3'].forEach(id=>document.getElementById(id).value='');document.getElementById('parseWarnings').innerHTML='';}
+
+/* ---- IMPORTAÇÃO DE PDF ---- */
+// Consulta um código (célula) na legenda do PDF; recorre a SHIFT_CODE_MAP.
+function pdfLookupCode(raw){
+  if(raw==null) return null;
+  const code=String(raw).trim();
+  if(!code) return null;
+  const mh=/^(\d+(?:[.,]\d+)?)\s*h$/i.exec(code);            // "3h" / "8h"
+  if(mh) return {worked:true,start:'',end:'',hours:parseFloat(mh[1].replace(',','.'))};
+  const base=code.replace(/\s*\(.*\)\s*$/,'').trim();
+  let info=PDF_LEGEND[code]||PDF_LEGEND[base];
+  if(info) return info;
+  const sm=SHIFT_CODE_MAP[code]||SHIFT_CODE_MAP[base];
+  if(sm) return {worked:sm.worked!==false,start:sm.start||'',end:sm.end||'',hours:null};
+  return {worked:true,start:'',end:'',hours:null,unknown:true};
+}
+
+function onPdfFile(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  const status=document.getElementById('pdfStatus');
+  status.textContent='A ler o PDF…';
+  const rd=new FileReader();
+  rd.onload=function(){
+    try{
+      const u8=new Uint8Array(rd.result);
+      const latin1=pdfBytesToLatin1(u8);
+      const content=pdfContentStreams(latin1);
+      const frags=extractPdfFragments(content);
+      PDF_LEGEND=parsePdfLegend(frags);
+      PDF_DATA=structurePdf(frags);
+      if(!PDF_DATA || !PDF_DATA.employees.length){
+        status.innerHTML='<span style="color:var(--err)">Não foi possível interpretar este PDF (talvez seja digitalizado ou tenha outro formato). Use as caixas de colar abaixo.</span>';
+        document.getElementById('pdfPicker').style.display='none'; return;
+      }
+      const sel=document.getElementById('pdfEmpSel');
+      sel.innerHTML='<option value="">— escolher o seu nome —</option>'+
+        PDF_DATA.employees.map((e,i)=>`<option value="${i}">${escapeHtml(e.name)}</option>`).join('');
+      document.getElementById('pdfPicker').style.display='block';
+      status.innerHTML=`✅ PDF lido: <b>${escapeHtml(PDF_DATA.monthLabel)}</b> · ${PDF_DATA.employees.length} funcionários · ${Object.keys(PDF_LEGEND).length} códigos na legenda. Escolha o seu nome.`;
+    }catch(err){
+      status.innerHTML='<span style="color:var(--err)">Erro ao ler o PDF: '+escapeHtml(err.message||String(err))+'</span>';
+    }
+  };
+  rd.onerror=function(){ status.innerHTML='<span style="color:var(--err)">Falha ao abrir o ficheiro.</span>'; };
+  rd.readAsArrayBuffer(file);
+}
+
+function applyPdfEmployee(){
+  const v=document.getElementById('pdfEmpSel').value;
+  if(v==='' || !PDF_DATA) return;
+  buildGridFromPdf(PDF_DATA.employees[+v]);
+}
+
+// Constrói a grelha a partir de um funcionário do PDF (Rotina/Urgência/Prevenção).
+function buildGridFromPdf(emp){
+  const y=PDF_DATA.year, m=PDF_DATA.month;
+  document.getElementById('selYear').value=y;
+  document.getElementById('selMonth').value=m;
+  updateWeeklyHint();
+  UI.name=emp.name; UI.inputMode='paste';
+  const {dates,monthFirst,monthLast}=extendedDates(y,m);
+  const prevLast=iso(new Date(y,m-1,0));
+  const warns=[];
+  UI.gridRows=dates.map(date=>{
+    const inMonth=(date>=monthFirst && date<=monthLast);
+    let colIdx=null;
+    if(inMonth) colIdx=parseISO(date).getDate();     // dia d -> coluna d
+    else if(date===prevLast) colIdx=0;               // último dia do mês anterior -> coluna 0
+    const rota=(colIdx!=null)?(emp.rota[colIdx]||''):'';
+    const urg =(colIdx!=null)?(emp.urg[colIdx]||''):'';
+    const prv =(colIdx!=null)?(emp.prev[colIdx]||''):'';
+    const rInfo=pdfLookupCode(rota), uInfo=pdfLookupCode(urg), pInfo=pdfLookupCode(prv);
+    const kind=dayKind(date), isWeekday=(kind==='weekday');
+    const er = !!(uInfo && uInfo.worked);
+    const prevention = !!(prv && ( (pInfo&&pInfo.worked) || /^prv|^prev/i.test(prv) ));
+    let regular=false,start='',end='',hours=null;
+    if(er){
+      start=uInfo.start||''; end=uInfo.end||'';
+      if(!start && uInfo.hours) hours=uInfo.hours;
+      if(!start && !uInfo.hours) warns.push({type:'warn',msg:`${date}: ER «${urg}» sem horário na legenda — indique início/fim na grelha.`});
+    } else if(prevention){
+      start=(pInfo&&pInfo.start)||''; end=(pInfo&&pInfo.end)||'';
+      if(!start && pInfo && pInfo.hours) hours=pInfo.hours;
+      if(!start && !(pInfo&&pInfo.hours)) warns.push({type:'warn',msg:`${date}: prevenção «${prv}» sem horário — indique início/fim na grelha.`});
+    } else if(rInfo && rInfo.worked){
+      regular=true;
+      // regular: preferir horas líquidas da legenda; senão janela
+      if(rInfo.hours){ hours=rInfo.hours; } else { start=rInfo.start||''; end=rInfo.end||''; }
+    } else if(!inMonth && isWeekday){
+      regular=true;   // dia útil de semana de fronteira -> Regular
+    }
+    if(rota && rInfo && rInfo.unknown) warns.push({type:'warn',msg:`Código de escala desconhecido: «${rota}» (${formatPT(date)}). Verifique na grelha.`});
+    return {date,inMonth,roster:rota,off:!(rInfo&&rInfo.worked),regular,er,prevention,start,end,hours,
+      note:(!inMonth?'fronteira':'')+(urg?` ER:${urg}`:'')+(prv?` Pv:${prv}`:'')};
+  });
+  const seen=new Set(); const uniq=warns.filter(w=>{const k=w.msg;if(seen.has(k))return false;seen.add(k);return true;});
+  document.getElementById('parseWarnings').innerHTML=
+    `<div class="alert info">👤 <b>${escapeHtml(emp.name)}</b> · ${escapeHtml(PDF_DATA.monthLabel)} — importado do PDF. Verifique a grelha e clique em Calcular.</div>`+
+    uniq.slice(0,15).map(w=>`<div class="alert ${w.type}">${w.msg}</div>`).join('');
+  renderGrid();
+}
 
 /* ---- MANUAL ---- */
 function buildCalendar(){
