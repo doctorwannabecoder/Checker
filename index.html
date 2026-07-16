@@ -145,10 +145,15 @@
       <label class="inline" style="margin-bottom:6px"><span class="small" id="dailyContractInfo"></span></label>
       <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
     </div>
+    <div class="row" style="margin-top:10px">
+      <label>Categoria <select id="selCategory" onchange="onCategoryChange()"></select></label>
+      <label>Regime <select id="selRegime" onchange="updateWeeklyHint()"></select></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small mono" id="salaryHint"></span></label>
+    </div>
     <p class="small">O horário base (40 ou 42h) menos a redução legal (0–7h) dá o
       <b>horário semanal efetivo</b> (<span class="mono" id="weeklyHint"></span>), que define a base diária
-      contratada e valida os limites semanais. O cálculo de ER/TN considera <b>semanas completas</b>
-      (estende a Seg–Dom nas fronteiras do mês).</p>
+      contratada. A <b>categoria/regime</b> (tabela SIM 2026) define o vencimento base e o €/hora usados
+      para valorizar ER e TN. O cálculo de ER/TN considera <b>semanas completas</b> (Seg–Dom nas fronteiras).</p>
   </div>
 
   <!-- 2 · entrada -->
@@ -232,12 +237,13 @@
     </div>
     <div style="overflow-x:auto">
       <table id="summaryTable">
-        <thead><tr><th>Código</th><th>Descrição / Tipo</th><th class="num">Horas pagas</th>
-          <th class="num">Horas ER</th><th class="num">Horas TN</th><th>Notas</th></tr></thead>
+        <thead><tr><th>Código</th><th>Descrição / Tipo</th><th class="num">Horas</th>
+          <th class="num">Valor (€)</th><th>Notas</th></tr></thead>
         <tbody></tbody><tfoot></tfoot>
       </table>
     </div>
-    <p class="small">TN é um <b>acréscimo de noturno</b> contado em separado — coincide com horas já listadas em códigos ER.</p>
+    <p class="small">ER = trabalho extraordinário (horas além do contrato semanal, ao €/hora × multiplicador SIM).
+      TN = suplemento noturno sobre as horas de contrato cumpridas à noite. RW/base = pagas pelo vencimento base.</p>
   </div>
 
   <!-- OUTPUT 2 -->
@@ -248,6 +254,20 @@
       <button class="btn secondary" onclick="exportCSV('shifts')">⬇️ CSV</button>
     </div>
     <div id="shiftsArea"></div>
+  </div>
+
+  <!-- OUTPUT 3 · ANUAL -->
+  <div id="annualCard" class="card" style="display:none">
+    <h2>Output 3 · Estimativa anual de rendimento</h2>
+    <p class="small">Estimativa (v1): <b>14×</b> vencimento base (12 meses + subsídios de férias e Natal)
+      mais o extra ER+TN deste mês projetado a <b>×12</b>. Numa próxima versão poderá introduzir os
+      turnos ER de cada mês do ano para um valor exato.</p>
+    <div style="overflow-x:auto">
+      <table id="annualTable">
+        <thead><tr><th>Componente</th><th class="num">Cálculo</th><th class="num">Valor anual (€)</th></tr></thead>
+        <tbody></tbody><tfoot></tfoot>
+      </table>
+    </div>
   </div>
 </main>
 
@@ -335,6 +355,42 @@ const SHIFT_CODE_MAP = {
 };
 
 /* =========================================================================
+   TABELA SALARIAL SIM 2026 (posição 1) — valores fornecidos pelo utilizador.
+   m = €/mês base; h = €/hora. IFE (internato) só tem regime "geral".
+   Editar aqui para atualizar valores/anos.
+   ========================================================================= */
+const SALARY_TABLE = {
+  assistente: { label:'Assistente', regimes:{
+    geral:     {m:3538.87, h:20.42},
+    plena:     {m:4423.59, h:25.52},
+    exclusiva: {m:4173.55, h:22.93} } },
+  graduado: { label:'Assistente Graduado', regimes:{
+    geral:     {m:4000.45, h:23.08},
+    plena:     {m:5000.56, h:28.85},
+    exclusiva: {m:4981.34, h:27.37} } },
+  senior: { label:'Assistente Graduado Sénior', regimes:{
+    geral:     {m:4865.94, h:28.07},
+    plena:     {m:6082.43, h:35.09},
+    exclusiva: {m:5904.52, h:32.44} } },
+  ife1: { label:'Internato Médico — ano 1', regimes:{ geral:{m:2245.48, h:12.95} } },
+  ife2: { label:'Internato Médico — ano 2', regimes:{ geral:{m:2516.53, h:14.52} } }
+};
+const REGIME_LABELS = { geral:'Geral', plena:'Dedicação plena', exclusiva:'Dedicação exclusiva' };
+
+/* Multiplicadores de trabalho extraordinário (ER) sobre o €/hora — SIM p.2 /
+   DL 62/79. [categoria][segmento]{first: 1ª hora, seg: horas seguintes}.
+   Sáb 08–13 = diurno dia útil; Sáb 13–20 = SAB diu; Sáb 20–08 = SAB not. */
+const ER_MULTIPLIER = {
+  DU:  { diu:{first:1.25, seg:1.5}, not:{first:1.75, seg:2.0} },
+  SAB: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} },
+  DOM: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} },
+  FER: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} }
+};
+// Suplemento de trabalho noturno sobre horas normais (contrato) — % do €/hora.
+// SUPOSIÇÃO: 25% (Código do Trabalho). Confirmar para a carreira médica.
+const TN_UPLIFT = { pct:0.25, confirm:true };
+
+/* =========================================================================
    PARTE B — UTILITÁRIOS DE DATA / FERIADOS  (REUTILIZADO do scheduler)
    ========================================================================= */
 const PT_HOLIDAYS_FIXED = [
@@ -405,54 +461,52 @@ function categoryFor(dateISO, tod){
 
 /* Classifica um turno ER em alocações por código.
    startMin = minuto de início (0..1439) no dia 'dateISO'; durMin = duração. */
-function classifyErShift(dateISO, startMin, durMin){
-  const erMin={}, tnMin={};            // erMin['CAT|SEG|ORDER'] , tnMin['CAT']
+/* Classifica um turno ER, separando horas de CONTRATO (as primeiras
+   `contractFillMin` que completam o horário semanal) das EXTRAORDINÁRIAS.
+   Devolve: erMin['CAT|SEG|ORDER'] (extraordinário), tnMin['CAT'] (contrato à
+   noite → suplemento TN), contractDayMin['CAT'] (contrato de dia → só base). */
+function classifyErShift(dateISO, startMin, durMin, contractFillMin){
+  const erMin={}, tnMin={}, contractDayMin={};
   const firstN=PAYROLL_RULES.firstHourMinutes.minutes;
   for(let m=0;m<durMin;m++){
     const abs=startMin+m, tod=((abs%1440)+1440)%1440, offDays=Math.floor(abs/1440);
     const realDate=iso(addDays(parseISO(dateISO),offDays));
     const cat=categoryFor(realDate,tod);
     const seg=isNightMinute(tod)?'not':'diu';
-    const order=(m<firstN)?'first':'seg';
-    const k=cat+'|'+seg+'|'+order;
-    erMin[k]=(erMin[k]||0)+1;
-    if(seg==='not') tnMin[cat]=(tnMin[cat]||0)+1;
+    if(m<contractFillMin){
+      if(seg==='not') tnMin[cat]=(tnMin[cat]||0)+1; else contractDayMin[cat]=(contractDayMin[cat]||0)+1;
+    } else {
+      const em=m-contractFillMin;
+      const order=(em<firstN)?'first':'seg';
+      const k=cat+'|'+seg+'|'+order;
+      erMin[k]=(erMin[k]||0)+1;
+    }
   }
-  const allocations=[];
-  // ER por código
-  Object.entries(erMin).forEach(([k,mins])=>{
-    const [cat,seg,order]=k.split('|');
-    const key=CODE_MATRIX[cat]?.[seg]?.[order];
-    pushAlloc(allocations,key,mins/60);
-  });
-  // TN (acréscimo) por categoria
-  Object.entries(tnMin).forEach(([cat,mins])=>{
-    pushAlloc(allocations,TN_MATRIX[cat],mins/60);
-  });
-  // consolidar mesmas chaves e ordenar
-  const byKey={};
-  allocations.forEach(a=>{ if(!byKey[a.key])byKey[a.key]={...a}; else byKey[a.key].hours+=a.hours; });
-  return Object.values(byKey).map(a=>({...a,hours:round2(a.hours)}))
-    .sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  return {erMin, tnMin, contractDayMin};
 }
-function pushAlloc(arr, key, hours){
-  if(hours<=0) return;
+function makeAlloc(key, hours, eur, extra){
   const c = key && PAYROLL_RULES.codes[key];
-  if(c){ arr.push({key,code:c.code,desc:c.desc,hours,isER:c.isER,isTN:c.isTN,confirm:c.confirm,missing:c.missing}); }
-  else { arr.push({key:key||'??',code:'??',desc:'Código não mapeado',hours,isER:true,isTN:false,confirm:true,missing:true}); }
+  const base = c ? {key,code:c.code,desc:c.desc,isER:c.isER,isTN:c.isTN,confirm:c.confirm,missing:c.missing}
+                 : {key:key||'??',code:'??',desc:'Código não mapeado',isER:false,isTN:false,confirm:true,missing:true};
+  return Object.assign(base, {hours:round2(hours), eur:round2(eur||0)}, extra||{});
+}
+function addAlloc(map, key, hours, eur, extra){
+  if(hours<=0 && (!eur||eur<=0)) return;
+  key = key||'??';
+  if(!map[key]) map[key]=makeAlloc(key,hours,eur,extra);
+  else { map[key].hours=round2(map[key].hours+hours); map[key].eur=round2(map[key].eur+(eur||0)); }
 }
 
-/* Calcula uma entrada-dia.
-   entry: {date, regular, er, prevention, start, end, hours, rosterCode}
-   ctx:   {dailyContractHours} */
-function computeEntry(entry, ctx){
+/* Calcula uma entrada-dia. contractRem = horas de contrato ainda por cumprir
+   nesta semana (à entrada); devolve contractRemAfter para a próxima entrada.
+   ctx: {dailyContractHours, weeklyContract, hourly} */
+function computeEntry(entry, ctx, contractRem){
   const date=entry.date, kind=dayKind(date), isFds=(kind!=='weekday');
-  const warnings=[]; let allocations=[];
+  const warnings=[]; const allocMap={};
   let startMin=timeToMin(entry.start), endMin=timeToMin(entry.end), durMin=null;
   if(startMin!=null && endMin!=null) durMin=shiftDurationMin(startMin,endMin);
   else if(typeof entry.hours==='number' && entry.hours>0) durMin=entry.hours*60;
 
-  // validações de tempo
   if(entry.er || entry.prevention){
     if(startMin==null && endMin==null && !(durMin>0))
       warnings.push({type:'err',msg:`${date}: ${entry.er?'ER':'Prevenção'} marcado mas sem horas (início/fim ou horas).`});
@@ -462,70 +516,88 @@ function computeEntry(entry, ctx){
   if(durMin!=null && durMin>PAYROLL_RULES.limits.maxDailyHours*60)
     warnings.push({type:'err',msg:`${date}: duração ${(durMin/60).toFixed(1)}h excede o máximo diário (${PAYROLL_RULES.limits.maxDailyHours}h).`});
 
-  let totalH=durMin>0?durMin/60:0, nightH=0, erDayH=0, erNightH=0;
+  const hourly=ctx.hourly||0;
+  let totalH=durMin>0?durMin/60:0, tnH=0, erDayH=0, erNightH=0, contractDayH=0, erEur=0, tnEur=0;
+  let contractRemAfter=(typeof contractRem==='number')?contractRem:Infinity;
 
   if(entry.er && durMin>0 && startMin!=null){
-    allocations=classifyErShift(date,startMin,durMin);
-    allocations.forEach(a=>{ if(a.isTN) nightH+=a.hours; else if(a.isER){ /* dia/noite via key */ } });
-    // recomputar dia/noite a partir das chaves ER
-    allocations.forEach(a=>{ if(a.isER){ if(String(a.key).includes('NOT')) erNightH+=a.hours; else if(String(a.key).includes('DIU')) erDayH+=a.hours; } });
-    // alertas de códigos em falta
-    allocations.filter(a=>a.missing).forEach(a=>warnings.push({type:'warn',
-      msg:`${date}: ${a.desc} (${a.hours.toFixed(2)}h) usa um código ainda EM FALTA — preencha em PAYROLL_RULES.codes.`}));
+    const shiftH=durMin/60;
+    const avail=(contractRemAfter===Infinity)?0:Math.max(0,contractRemAfter);
+    const contractFillH=Math.min(shiftH, avail);
+    const contractFillMin=Math.round(contractFillH*60);
+    if(contractRemAfter!==Infinity) contractRemAfter=contractRemAfter-contractFillH;
+    const cls=classifyErShift(date,startMin,durMin,contractFillMin);
+    // ER (extraordinário) → código + € (€/hora × multiplicador)
+    Object.entries(cls.erMin).forEach(([k,mins])=>{
+      const [cat,seg,order]=k.split('|');
+      const key=CODE_MATRIX[cat] && CODE_MATRIX[cat][seg] ? CODE_MATRIX[cat][seg][order] : null;
+      const h=mins/60;
+      const mult=(ER_MULTIPLIER[cat] && ER_MULTIPLIER[cat][seg])?ER_MULTIPLIER[cat][seg][order]:0;
+      const eur=h*hourly*mult;
+      addAlloc(allocMap, key, h, eur, {mult});
+      if(seg==='not') erNightH+=h; else erDayH+=h; erEur+=eur;
+    });
+    // TN → suplemento noturno sobre horas de contrato
+    Object.entries(cls.tnMin).forEach(([cat,mins])=>{
+      const h=mins/60, eur=h*hourly*TN_UPLIFT.pct;
+      addAlloc(allocMap, TN_MATRIX[cat]||'TN_DU', h, eur, {mult:TN_UPLIFT.pct});
+      tnH+=h; tnEur+=eur;
+    });
+    Object.values(cls.contractDayMin).forEach(mins=>{ contractDayH+=mins/60; });
+    Object.values(allocMap).filter(a=>a.missing).forEach(a=>warnings.push({type:'warn',
+      msg:`${date}: ${a.desc} (${a.hours.toFixed(2)}h) — código de recibo por confirmar em PAYROLL_RULES.codes.`}));
   } else if(entry.er && durMin>0){
-    warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir diurno/noturno e 1ª/seguintes.`});
+    warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir contrato/extraordinário e diurno/noturno.`});
+  } else if(entry.prevention && durMin>0){
+    addAlloc(allocMap,'PREV', totalH, 0, {});
+  } else if(entry.regular){
+    const rwH=(durMin>0)?totalH:ctx.dailyContractHours;
+    addAlloc(allocMap,'RW', rwH, 0, {});
+    if(contractRemAfter!==Infinity) contractRemAfter=contractRemAfter-rwH;
   }
 
-  if(entry.prevention && durMin>0){
-    pushAlloc(allocations,'PREV',totalH);
-  }
-
-  // Trabalho Regular: dias úteis trabalhados sem ER (base contratada)
-  let rwH=0;
-  if(entry.regular && !entry.er){
-    rwH = (durMin>0) ? totalH : ctx.dailyContractHours;   // usa horas reais se houver, senão a base diária
-    pushAlloc(allocations,'RW',rwH);
-  }
-
+  const allocations=Object.values(allocMap).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   return {
     date, kind, isFds, weekday:weekdayName(date), holiday:kind==='holiday'?holidayName(date):'',
     start:startMin!=null?minToHHMM(startMin):'', end:endMin!=null?minToHHMM(endMin):'',
     isER:!!entry.er, isPrev:!!entry.prevention,
-    totalH:round2(totalH), nightH:round2(nightH), tnH:round2(nightH),
-    erDayH:round2(erDayH), erNightH:round2(erNightH), regularInside:0, rwH:round2(rwH),
-    allocations, warnings
+    totalH:round2(totalH), tnH:round2(tnH), erDayH:round2(erDayH), erNightH:round2(erNightH),
+    contractDayH:round2(contractDayH),
+    erEur:round2(erEur), tnEur:round2(tnEur), shiftEur:round2(erEur+tnEur),
+    allocations, warnings, contractRemAfter
   };
 }
 
 function computeMonth(entries, ctx){
   const shifts=[], warnings=[], summaryMap={}, weekTotals={};
-  function ensure(key,code,desc,isER,isTN,confirm,missing){
-    if(!summaryMap[key]) summaryMap[key]={key,code,desc,isER,isTN,confirm,missing,hours:0,erHours:0,tnHours:0};
-    return summaryMap[key];
+  function ensure(a){
+    if(!summaryMap[a.key]) summaryMap[a.key]={key:a.key,code:a.code,desc:a.desc,isER:a.isER,isTN:a.isTN,confirm:a.confirm,missing:a.missing,hours:0,eur:0};
+    return summaryMap[a.key];
   }
-  for(const e of entries){
-    const r=computeEntry(e,ctx);
-    // soma semanal usa TODOS os dias (incl. dias extra de semana de fronteira)
-    // para validar o teto semanal; exclui TN (que é acréscimo, não horas extra).
-    const wk=isoWeekKey(e.date);
-    const dayHours=r.allocations.filter(a=>!a.isTN).reduce((s,a)=>s+a.hours,0);
-    weekTotals[wk]=(weekTotals[wk]||0)+dayHours;
-    // dias FORA do mês (semana de fronteira) não entram no resumo/detalhe mensal
-    if(e.inMonth===false) continue;
-    shifts.push(r); r.warnings.forEach(w=>warnings.push(w));
-    r.allocations.forEach(a=>{
-      const row=ensure(a.key,a.code,a.desc,a.isER,a.isTN,a.confirm,a.missing);
-      row.hours+=a.hours; if(a.isER)row.erHours+=a.hours; if(a.isTN)row.tnHours+=a.hours;
-    });
-  }
+  // Agrupar por semana ISO e processar em ordem cronológica (contrato semanal).
+  const weeks={};
+  entries.forEach(e=>{ const wk=isoWeekKey(e.date); (weeks[wk]=weeks[wk]||[]).push(e); });
+  Object.keys(weeks).sort().forEach(wk=>{
+    const days=weeks[wk].slice().sort((a,b)=>a.date.localeCompare(b.date));
+    let contractRem=ctx.weeklyContract;
+    for(const e of days){
+      const r=computeEntry(e, ctx, contractRem);
+      contractRem=r.contractRemAfter;
+      const dayHours=r.allocations.filter(a=>!a.isTN).reduce((s,a)=>s+a.hours,0);
+      weekTotals[wk]=(weekTotals[wk]||0)+dayHours;
+      if(e.inMonth===false) continue;   // fronteira: conta p/ contrato, não p/ resumo
+      shifts.push(r); r.warnings.forEach(w=>warnings.push(w));
+      r.allocations.forEach(a=>{ const row=ensure(a); row.hours=round2(row.hours+a.hours); row.eur=round2(row.eur+(a.eur||0)); });
+    }
+  });
   Object.entries(weekTotals).forEach(([wk,h])=>{
     if(h>PAYROLL_RULES.limits.maxWeeklyHours)
-      warnings.push({type:'warn',msg:`Semana ${wk}: ${round2(h)}h totais excedem o teto semanal assumido (${PAYROLL_RULES.limits.maxWeeklyHours}h). [confirmar]`});
+      warnings.push({type:'warn',msg:`Semana ${wk}: ${round2(h)}h totais excedem o teto semanal (${PAYROLL_RULES.limits.maxWeeklyHours}h). [confirmar]`});
   });
-  const summary=Object.values(summaryMap)
-    .map(r=>({...r,hours:round2(r.hours),erHours:round2(r.erHours),tnHours:round2(r.tnHours)}))
-    .sort((a,b)=>String(a.code).localeCompare(String(b.code)));
-  return {summary, shifts, warnings};
+  const summary=Object.values(summaryMap).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  const erEur=round2(shifts.reduce((s,r)=>s+(r.erEur||0),0));
+  const tnEur=round2(shifts.reduce((s,r)=>s+(r.tnEur||0),0));
+  return {summary, shifts, warnings, erEur, tnEur, totalExtraEur:round2(erEur+tnEur)};
 }
 
 /* =========================================================================
@@ -794,6 +866,26 @@ function weeklyReduction(){return parseInt(document.getElementById('selWeeklyRed
 function currentWeekly(){return Math.max(0, weeklyBase()-weeklyReduction());}
 function dailyContractHours(){return round2(currentWeekly()/5);} // SUPOSIÇÃO: 5 dias/semana
 
+// Categoria / regime -> vencimento base (€/mês) e €/hora (tabela SIM 2026).
+function currentCategory(){return document.getElementById('selCategory').value;}
+function currentRegime(){return document.getElementById('selRegime').value;}
+function currentSalary(){
+  const cat=SALARY_TABLE[currentCategory()]; if(!cat) return {m:0,h:0};
+  return cat.regimes[currentRegime()] || cat.regimes[Object.keys(cat.regimes)[0]] || {m:0,h:0};
+}
+function currentHourly(){return currentSalary().h||0;}
+function currentMonthlyBase(){return currentSalary().m||0;}
+function eur(n){return (Math.round((n+Number.EPSILON)*100)/100).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
+
+// Preenche o seletor de regime conforme a categoria (IFE só tem "geral").
+function fillRegimeOptions(){
+  const cat=SALARY_TABLE[currentCategory()]; const sr=document.getElementById('selRegime');
+  const keys=cat?Object.keys(cat.regimes):['geral'];
+  sr.innerHTML=keys.map(k=>`<option value="${k}" ${k==='exclusiva'?'selected':''}>${REGIME_LABELS[k]||k}</option>`).join('');
+  if(!keys.includes(sr.value)) sr.value=keys[0];
+}
+function onCategoryChange(){ fillRegimeOptions(); updateWeeklyHint(); }
+
 function initSelectors(){
   const months=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const sm=document.getElementById('selMonth');
@@ -803,6 +895,9 @@ function initSelectors(){
   sb.innerHTML=[40,42].map(h=>`<option value="${h}" ${h===40?'selected':''}>${h} h/semana</option>`).join('');
   let red=''; for(let r=0;r<=7;r++)red+=`<option value="${r}">${r===0?'sem redução':('−'+r+' h')}</option>`;
   const sr=document.getElementById('selWeeklyRed'); sr.innerHTML=red;
+  const sc=document.getElementById('selCategory');
+  sc.innerHTML=Object.entries(SALARY_TABLE).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
+  fillRegimeOptions();
   sb.addEventListener('change',updateWeeklyHint); sr.addEventListener('change',updateWeeklyHint);
   updateWeeklyHint();
 }
@@ -810,6 +905,8 @@ function updateWeeklyHint(){
   const base=weeklyBase(), red=weeklyReduction(), eff=currentWeekly();
   document.getElementById('weeklyHint').textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
   document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h · base diária ${dailyContractHours()} h`;
+  const sh=document.getElementById('salaryHint');
+  if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · ${eur(currentHourly())}/hora`;
 }
 
 function renderConfirmBanner(){
@@ -1044,12 +1141,12 @@ function collectEntries(){
    ========================================================================= */
 function calculate(){
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
-  if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (${UI.inputMode==='paste'?'analise as 3 partes':'preencha o manual'}).</span>`; return; }
-  const ctx={dailyContractHours:dailyContractHours()};
-  const result=computeMonth(entries,ctx); UI.lastResult=result;
+  if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (${UI.inputMode==='paste'?'importe o PDF ou preencha a grelha':'preencha o manual'}).</span>`; return; }
+  const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:currentHourly()};
+  const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
   const nER=result.shifts.filter(s=>s.isER).length;
-  meta.innerHTML=`<span class="small">${UI.name?escapeHtml(UI.name)+' · ':''}${entries.length} dia(s) · ${nER} turno(s) ER · base ${ctx.dailyContractHours}h/dia</span>`;
-  renderValidation(result.warnings); renderSummary(result.summary); renderShifts(result.shifts.filter(s=>s.isER));
+  meta.innerHTML=`<span class="small">${UI.name?escapeHtml(UI.name)+' · ':''}${SALARY_TABLE[currentCategory()].label} (${REGIME_LABELS[currentRegime()]}) · ${nER} turno(s) ER · extra ${eur(result.totalExtraEur)}</span>`;
+  renderValidation(result.warnings); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
 }
 function renderValidation(warnings){
   document.getElementById('validationCard').style.display='block';
@@ -1064,23 +1161,32 @@ function codeBadges(a){
   else if(a.confirm) b+=` <span class="badge confirm">confirmar</span>`;
   return b;
 }
-function renderSummary(summary){
+function renderSummary(summary,result){
   document.getElementById('summaryCard').style.display='block';
   const tb=document.querySelector('#summaryTable tbody'), tf=document.querySelector('#summaryTable tfoot');
-  if(!summary.length){tb.innerHTML=`<tr><td colspan="6" class="muted">Sem horas.</td></tr>`;tf.innerHTML='';return;}
-  tb.innerHTML=summary.map(r=>`<tr>
-    <td><span class="badge code">${r.code}</span></td>
-    <td>${r.desc}${codeBadges(r)}</td>
-    <td class="num">${r.hours.toFixed(2)}</td>
-    <td class="num">${r.isER?r.erHours.toFixed(2):'—'}</td>
-    <td class="num">${r.isTN?r.tnHours.toFixed(2):'—'}</td>
-    <td class="small">${r.isTN?'Acréscimo noturno (coincide c/ ER)':(r.isER?'Horas de ER':'Horas')}</td></tr>`).join('');
-  const totER=summary.filter(r=>r.isER).reduce((s,r)=>s+r.hours,0);
-  const totTN=summary.filter(r=>r.isTN).reduce((s,r)=>s+r.tnHours,0);
-  const totAll=summary.filter(r=>!r.isTN).reduce((s,r)=>s+r.hours,0);
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAIS</td>
-    <td class="num">${round2(totAll).toFixed(2)}</td><td class="num">${round2(totER).toFixed(2)}</td>
-    <td class="num">${round2(totTN).toFixed(2)}</td><td class="small">Total sem dupla contagem de TN</td></tr>`;
+  const baseEur=currentMonthlyBase();
+  // garantir uma linha de vencimento base (101.001), mesmo sem dias regulares
+  const rows=summary.slice();
+  if(!rows.some(r=>r.key==='RW')) rows.unshift({key:'RW',code:'101.001',desc:'Remuneração base',hours:0,eur:0,isER:false,isTN:false,confirm:false,missing:false});
+  if(!rows.length){tb.innerHTML=`<tr><td colspan="5" class="muted">Sem horas.</td></tr>`;tf.innerHTML='';return;}
+  tb.innerHTML=rows.map(r=>{
+    const isBase=(r.key==='RW');
+    const val=isBase?baseEur:r.eur;
+    const showVal=(isBase||r.isER||r.isTN)?eur(val):'—';
+    const note=isBase?'Vencimento base mensal':(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—')));
+    return `<tr>
+      <td><span class="badge code">${r.code}</span></td>
+      <td>${r.desc}${codeBadges(r)}</td>
+      <td class="num">${r.hours.toFixed(2)}</td>
+      <td class="num">${showVal}</td>
+      <td class="small">${note}</td></tr>`;
+  }).join('');
+  const totalExtra=result?result.totalExtraEur:0;
+  const totalEur=baseEur+totalExtra;
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220">
+    <td colspan="3">TOTAIS · extra ER+TN</td>
+    <td class="num">${eur(totalExtra)}</td>
+    <td class="small">Base ${eur(baseEur)} + extra = <b>${eur(totalEur)}</b> bruto/mês</td></tr>`;
 }
 function renderShifts(shifts){
   document.getElementById('shiftsCard').style.display='block';
@@ -1089,24 +1195,37 @@ function renderShifts(shifts){
   area.innerHTML=shifts.map(s=>{
     const allocs=s.allocations.map(a=>{
       const cls=a.isTN?'tn':(a.key==='RW'?'reg':(a.key==='PREV'?'prev':'er'));
+      const val=(a.isER||a.isTN)?` · <b>${eur(a.eur)}</b>`:'';
+      const mult=a.mult?` <span class="small">(×${a.mult})</span>`:'';
       return `<span class="splitline"><span class="pill ${cls}">${a.code}</span>
-        <span class="small">${a.desc}${codeBadges(a)} → <b>${a.hours.toFixed(2)} h</b></span></span>`;
+        <span class="small">${a.desc}${codeBadges(a)} → <b>${a.hours.toFixed(2)} h</b>${mult}${val}</span></span>`;
     }).join('');
     const w=s.warnings.length?`<div style="margin-top:6px">${s.warnings.map(x=>`<div class="alert ${x.type}" style="margin:4px 0">${x.msg}</div>`).join('')}</div>`:'';
     return `<div class="shiftcard ${s.isFds?'fds':'weekday'}">
       <h3>📅 ${formatPT(s.date)} · <span class="muted">${s.weekday}</span>
         ${s.holiday?`<span class="badge" style="border-color:var(--err);color:#fecaca">${s.holiday}</span>`:''}
-        ${s.isFds?'<span class="badge">FDS/Feriado</span>':'<span class="badge">Dia útil</span>'}</h3>
+        ${s.isFds?'<span class="badge">FDS/Feriado</span>':'<span class="badge">Dia útil</span>'}
+        <span class="badge code">${eur(s.shiftEur)}</span></h3>
       <div class="kv">
         <span>Início: <b>${s.start||'—'}</b></span><span>Fim: <b>${s.end||'—'}</b></span>
-        <span>Total ER: <b>${(s.erDayH+s.erNightH).toFixed(2)} h</b></span>
-        <span>TN no turno: <b>${s.tnH.toFixed(2)} h</b></span>
-        <span>Diurno/Noturno: <b>${s.erDayH.toFixed(2)} / ${s.erNightH.toFixed(2)} h</b></span></div>
+        <span>Horas totais: <b>${s.totalH.toFixed(2)}</b></span>
+        <span>Contrato: <b>${(s.contractDayH+s.tnH).toFixed(2)} h</b> (TN noturno ${s.tnH.toFixed(2)})</span>
+        <span>ER extraordinário: <b>${(s.erDayH+s.erNightH).toFixed(2)} h</b> (D ${s.erDayH.toFixed(2)} / N ${s.erNightH.toFixed(2)})</span></div>
       <div class="small muted">Repartição por código de pagamento:</div>${allocs}${w}</div>`;
   }).join('');
 }
 function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
 function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function renderAnnual(result){
+  document.getElementById('annualCard').style.display='block';
+  const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
+  const base=currentMonthlyBase(), monthExtra=result.totalExtraEur||0;
+  const baseAnnual=base*14, extraAnnual=monthExtra*12, total=baseAnnual+extraAnnual;
+  tb.innerHTML=
+    `<tr><td>Vencimento base</td><td class="num small">${eur(base)} × 14</td><td class="num">${eur(baseAnnual)}</td></tr>`+
+    `<tr><td>Extra ER+TN (projeção deste mês)</td><td class="num small">${eur(monthExtra)} × 12</td><td class="num">${eur(extraAnnual)}</td></tr>`;
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, estimativa)</td><td class="num">${eur(total)}</td></tr>`;
+}
 
 /* =========================================================================
    PARTE G — EXPORTAÇÃO
@@ -1115,23 +1234,26 @@ function toast(msg,err){const t=document.createElement('div');t.textContent=msg;
   t.style.cssText=`position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:${err?'var(--err)':'var(--ok)'};color:#06283b;padding:10px 18px;border-radius:10px;font-weight:700;z-index:99`;
   document.body.appendChild(t);setTimeout(()=>t.remove(),1800);}
 function copyToClipboard(text,ok){navigator.clipboard.writeText(text).then(()=>toast(ok||'Copiado!'),()=>toast('Falha ao copiar.',true));}
-function summaryToText(){if(!UI.lastResult)return '';const L=['Código\tDescrição\tHoras\tER\tTN'];
-  UI.lastResult.summary.forEach(r=>L.push(`${r.code}\t${r.desc}\t${r.hours.toFixed(2)}\t${r.isER?r.erHours.toFixed(2):''}\t${r.isTN?r.tnHours.toFixed(2):''}`));return L.join('\n');}
-function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício\tFim\tTotalER\tTN\tCódigos(horas)'];
+function summaryToText(){if(!UI.lastResult)return '';const L=['Código\tDescrição\tHoras\tValor(€)'];
+  const base=currentMonthlyBase();
+  UI.lastResult.summary.forEach(r=>{const v=(r.key==='RW')?base:(r.eur||0); L.push(`${r.code}\t${r.desc}\t${r.hours.toFixed(2)}\t${((r.key==='RW'||r.isER||r.isTN)?v:0).toFixed(2)}`);});
+  return L.join('\n');}
+function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício\tFim\tTotalER\tTN\tValor(€)\tCódigos'];
   UI.lastResult.shifts.filter(s=>s.isER).forEach(s=>{const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
-    L.push(`${formatPT(s.date)}\t${s.weekday}\t${s.start}\t${s.end}\t${(s.erDayH+s.erNightH).toFixed(2)}\t${s.tnH.toFixed(2)}\t${c}`);});return L.join('\n');}
+    L.push(`${formatPT(s.date)}\t${s.weekday}\t${s.start}\t${s.end}\t${(s.erDayH+s.erNightH).toFixed(2)}\t${s.tnH.toFixed(2)}\t${s.shiftEur.toFixed(2)}\t${c}`);});return L.join('\n');}
 function copySummary(){copyToClipboard(summaryToText(),'Resumo copiado!');}
 function copyShifts(){copyToClipboard(shiftsToText(),'Detalhe copiado!');}
 function exportCSV(which){
   if(!UI.lastResult){toast('Calcule primeiro.',true);return;}
-  const sep=';'; let csv,name;
+  const sep=';'; let csv,name; const base=currentMonthlyBase();
   if(which==='summary'){
-    csv='Codigo;Descricao;Horas;ER;TN\n'+UI.lastResult.summary.map(r=>[r.code,`"${r.desc}"`,r.hours.toFixed(2),r.isER?r.erHours.toFixed(2):'',r.isTN?r.tnHours.toFixed(2):''].join(sep)).join('\n');
+    csv='Codigo;Descricao;Horas;Valor(EUR)\n'+UI.lastResult.summary.map(r=>{const v=(r.key==='RW')?base:(r.eur||0);
+      return [r.code,`"${r.desc}"`,r.hours.toFixed(2),((r.key==='RW'||r.isER||r.isTN)?v:0).toFixed(2)].join(sep);}).join('\n');
     name='resumo_er_tn.csv';
   } else {
-    csv='Data;Dia;Inicio;Fim;TotalER;TN;Codigos\n'+UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
+    csv='Data;Dia;Inicio;Fim;TotalER;TN;Valor(EUR);Codigos\n'+UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
       const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
-      return [formatPT(s.date),s.weekday,s.start,s.end,(s.erDayH+s.erNightH).toFixed(2),s.tnH.toFixed(2),`"${c}"`].join(sep);}).join('\n');
+      return [formatPT(s.date),s.weekday,s.start,s.end,(s.erDayH+s.erNightH).toFixed(2),s.tnH.toFixed(2),s.shiftEur.toFixed(2),`"${c}"`].join(sep);}).join('\n');
     name='detalhe_er_tn.csv';
   }
   const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
