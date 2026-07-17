@@ -116,6 +116,18 @@
   tr.r-off{opacity:.55}
   tr.r-fds td:first-child{color:var(--h24)}
   tr.r-extra{background:#10192e}
+  /* Calendário de inserção manual — semanas na horizontal */
+  .mcal{margin-bottom:18px}
+  .mcal h3{margin:0 0 6px;font-size:13px;color:var(--accent2);font-weight:700;letter-spacing:-0.01em}
+  .mcal table{table-layout:fixed;width:100%;min-width:780px}
+  .mcal th{text-align:center;font-size:11px;padding:4px;position:static}
+  .mcal td{vertical-align:top;padding:4px;height:66px}
+  .mcal td.out{background:#0d1526;opacity:.55}
+  .mcal td.blank{background:#0b1220;border-color:#1e293b}
+  .mcal .dnum{font-size:11px;font-weight:700;color:var(--muted)}
+  .mcal td.fds .dnum{color:var(--h24)}
+  .mcal select{width:100%;padding:2px 4px;font-size:11px;margin-top:3px}
+  .mcal select.banco{border-color:var(--day)}
   @media print{
     header,.tabs,.toolbar,.noprint{display:none!important}
     body{background:#fff;color:#000}.card{border-color:#ccc;background:#fff}
@@ -151,7 +163,14 @@
       <label>Rotina (h/dia) <select id="selRotinaH"></select></label>
       <label>Tarde (h/dia) <select id="selTardeH"></select></label>
       <label>Extra (h/dia) <select id="selExtraH"></select></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">Horas de cada tipo de trabalho normal, usadas na inserção manual.</span></label>
+      <label>Bolsa Horas (h/dia) <select id="selBolsaH"></select></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">Folga = 8 h fixas. Horas usadas na inserção manual.</span></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label>€/hora ER (base dos multiplicadores)
+        <input type="number" id="inpErHourly" step="0.01" min="0" style="width:110px" onchange="updateWeeklyHint()"/>
+      </label>
+      <label class="inline" style="margin-bottom:6px"><span class="small" id="erHourlyHint"></span></label>
     </div>
   </div>
 
@@ -178,20 +197,12 @@
       <button id="tabPaste" onclick="switchInputTab('paste')">📄 Importar PDF</button>
     </div>
 
-    <!-- MANUAL (predefinição) -->
+    <!-- MANUAL (predefinição) — calendário: semanas na horizontal -->
     <div id="paneManual" class="pane active">
-      <p class="small">Marque por dia o que fez. <b>Rotina/Tarde/Extra</b> usam as horas definidas no ponto 1.
-        <b>Banco Dia</b> = 08:00–20:00 · <b>Banco Noite</b> = 20:00–08:00. Semana contada de <b>Segunda a Domingo</b>.</p>
-      <div style="overflow:auto;max-height:560px">
-        <table id="manualTable">
-          <thead><tr>
-            <th>Data</th><th>Sem.</th>
-            <th class="center">Rotina</th><th class="center">Tarde</th><th class="center">Extra</th>
-            <th class="center">Banco Dia</th><th class="center">Banco Noite</th><th>Obs.</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+      <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> (Rotina/Tarde/Extra/Folga/Bolsa) e
+        <b>banco</b> (Dia 08:00–20:00 · Noite 20:00–08:00 · 24h). Os dias úteis vêm pré-preenchidos com
+        <b>Rotina</b>. Semana de <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
+      <div id="manualCal" style="overflow:auto;max-height:640px"></div>
     </div>
 
     <!-- PDF (só em modo mensal) -->
@@ -902,8 +913,18 @@ function currentSalary(){
 }
 function currentHourly(){return currentSalary().h||0;} // €/hora "normal" da tabela SIM (÷2080)
 function currentMonthlyBase(){return currentSalary().m||0;}
-// €/hora do trabalho extraordinário (ER) — base dos multiplicadores. VALIDADO (recibo maio).
-function erHourly(){return round2(currentMonthlyBase()*12/ER_HOURLY_DIVISOR.value);}
+/* €/hora do trabalho extraordinário (ER) — base dos multiplicadores SIM.
+   ATENÇÃO: não é o valor/hora normal da tabela (÷2080). No recibo de maio do
+   Assistente geral (base 3.538,36) o ER saiu a 16,33 €/h (= 0,8 × 20,41).
+   A tabela SIM tem uma secção "Portaria 410/2005 — VALORES CONGELADOS", pelo
+   que este valor provavelmente NÃO deriva do vencimento atual. Por isso é um
+   campo EDITÁVEL: o utilizador confirma-o no recibo. O default é só um palpite. */
+function erHourlyDefault(){return round2(currentMonthlyBase()*12/ER_HOURLY_DIVISOR.value);}
+function erHourly(){
+  const inp=document.getElementById('inpErHourly');
+  const v=inp?parseFloat(inp.value):NaN;
+  return (v>0)?v:erHourlyDefault();
+}
 function eur(n){return (Math.round((n+Number.EPSILON)*100)/100).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
 
 // Preenche o seletor de regime conforme a categoria (IFE só tem "geral").
@@ -913,14 +934,36 @@ function fillRegimeOptions(){
   sr.innerHTML=keys.map(k=>`<option value="${k}" ${k==='exclusiva'?'selected':''}>${REGIME_LABELS[k]||k}</option>`).join('');
   if(!keys.includes(sr.value)) sr.value=keys[0];
 }
-function onCategoryChange(){ fillRegimeOptions(); updateWeeklyHint(); }
+function onCategoryChange(){
+  fillRegimeOptions();
+  const inp=document.getElementById('inpErHourly');
+  if(inp) inp.value=erHourlyDefault().toFixed(2);   // repõe o palpite ao mudar de categoria
+  updateWeeklyHint();
+}
 
 /* Tipos de trabalho normal (horas definidas no ponto 1) e período. */
 function rotinaHours(){return parseFloat(document.getElementById('selRotinaH').value)||0;}
 function tardeHours(){return parseFloat(document.getElementById('selTardeH').value)||0;}
 function extraHours(){return parseFloat(document.getElementById('selExtraH').value)||0;}
+function bolsaHours(){return parseFloat(document.getElementById('selBolsaH').value)||0;}
 function periodType(){const e=document.getElementById('selPeriodType');return e?e.value:'mensal';}
 function isAnual(){return periodType()==='anual';}
+
+/* Tipos de trabalho normal (consomem o contrato semanal, pagos pela base). */
+const WORK_TYPES = {
+  rotina: {label:'Rotina', hours:()=>rotinaHours()},
+  tarde:  {label:'Tarde',  hours:()=>tardeHours()},
+  extra:  {label:'Extra',  hours:()=>extraHours()},
+  folga:  {label:'Folga',  hours:()=>8},            // 8 h fixas
+  bolsa:  {label:'Bolsa Horas', hours:()=>bolsaHours()}
+};
+/* Turnos de banco (ER) — janelas fixas; a "máscara" mantém as fórmulas intactas. */
+const BANCO_TYPES = {
+  dia:   {label:'Banco Dia',   start:'08:00', end:'20:00'},
+  noite: {label:'Banco Noite', start:'20:00', end:'08:00'},
+  h24:   {label:'Banco 24h',   start:'08:00', end:'08:00'}
+};
+function workHoursOf(key){ const w=WORK_TYPES[key]; return w?w.hours():0; }
 
 function initSelectors(){
   const months=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -939,7 +982,11 @@ function initSelectors(){
   document.getElementById('selRotinaH').innerHTML=mk(4,8,7);
   document.getElementById('selTardeH').innerHTML=mk(4,8,6);
   document.getElementById('selExtraH').innerHTML=mk(1,10,4);
+  document.getElementById('selBolsaH').innerHTML=mk(1,10,4);
+  document.getElementById('inpErHourly').value=erHourlyDefault().toFixed(2);
   sb.addEventListener('change',updateWeeklyHint); sr.addEventListener('change',updateWeeklyHint);
+  ['selRotinaH','selTardeH','selExtraH','selBolsaH'].forEach(id=>
+    document.getElementById(id).addEventListener('change',()=>{ if(UI.inputMode==='manual') renderManualCalendar(); }));
   updateWeeklyHint(); updatePeriodHint();
 }
 function updatePeriodHint(){
@@ -963,7 +1010,9 @@ function updateWeeklyHint(){
   if(wh) wh.textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
   document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h (Seg–Dom) · base diária ${dailyContractHours()} h`;
   const sh=document.getElementById('salaryHint');
-  if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/h ER ${eur(erHourly())} (normal ${eur(currentHourly())})`;
+  if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/h normal (tabela) ${eur(currentHourly())}`;
+  const eh=document.getElementById('erHourlyHint');
+  if(eh) eh.innerHTML=`Confirme no recibo: 700.004 ÷ horas ÷ 2. <span class="badge confirm">confirmar</span>`;
 }
 
 function renderConfirmBanner(){
@@ -1099,32 +1148,75 @@ function buildCalendar(){
   const lastISO  = anual ? `${y}-12-31`
                          : `${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`;
   const start=mondayOfWeek(firstISO);           // inclui dias do mês anterior da mesma semana
-  UI.manualRows=[];
+  UI.manualRows=[]; UI.rowByDate={};
   let d=parseISO(start), end=parseISO(lastISO);
   while(d<=end){
     const date=iso(d);
-    UI.manualRows.push({date, inMonth:(date>=firstISO && date<=lastISO),
-      rotina:false, tarde:false, extra:false, bancoDia:false, bancoNoite:false});
+    // pré-preenche dias úteis (não feriados) com Rotina
+    const work=(dayKind(date)==='weekday')?'rotina':'';
+    const row={date, inMonth:(date>=firstISO && date<=lastISO), work, banco:''};
+    UI.manualRows.push(row); UI.rowByDate[date]=row;
     d=addDays(d,1);
   }
-  renderManualTable(); updateWeeklyHint();
+  UI.calFirst=firstISO; UI.calLast=lastISO; UI.calStart=start;
+  renderManualCalendar(); updateWeeklyHint();
 }
-function renderManualTable(){
-  const tb=document.querySelector('#manualTable tbody'); tb.innerHTML='';
-  UI.manualRows.forEach((r,i)=>{
-    const kind=dayKind(r.date), tr=document.createElement('tr');
-    const cls=[kind!=='weekday'?'r-fds':'', !r.inMonth?'r-extra':''].filter(Boolean).join(' ');
-    if(cls) tr.className=cls;
-    const cb=(f)=>`<td class="center"><input type="checkbox" data-i="${i}" data-f="${f}" ${r[f]?'checked':''}></td>`;
-    tr.innerHTML=`<td>${formatPT(r.date)}${kind==='holiday'?' 🎌':''}</td>
-      <td class="small">${weekdayShort(r.date)}</td>
-      ${cb('rotina')}${cb('tarde')}${cb('extra')}${cb('bancoDia')}${cb('bancoNoite')}
-      <td class="small">${!r.inMonth?'semana anterior':(kind==='holiday'?holidayName(r.date):'')}</td>`;
-    tb.appendChild(tr);
-  });
-  tb.querySelectorAll('input').forEach(el=>el.addEventListener('change',e=>{
-    const i=+e.target.dataset.i,f=e.target.dataset.f;
-    UI.manualRows[i][f]=e.target.checked;
+
+/* Calendário: um bloco por mês, semanas na horizontal (Seg–Dom).
+   Cada dia tem 2 listas: trabalho normal + banco. Dias fora do intervalo
+   aparecem como célula vazia (pertencem ao bloco do mês vizinho). */
+function renderManualCalendar(){
+  const host=document.getElementById('manualCal'); if(!host || !UI.calFirst) return;
+  const DOW=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  const monthsPT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const workOpts=(sel)=>['<option value="">—</option>'].concat(
+    Object.entries(WORK_TYPES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.label} (${v.hours()}h)</option>`)).join('');
+  const bancoOpts=(sel)=>['<option value="">— banco —</option>'].concat(
+    Object.entries(BANCO_TYPES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.label}</option>`)).join('');
+
+  // meses a desenhar
+  const firstD=parseISO(UI.calFirst), lastD=parseISO(UI.calLast);
+  const blocks=[];
+  let cur=new Date(firstD.getFullYear(), firstD.getMonth(), 1);
+  while(cur<=lastD){
+    const y=cur.getFullYear(), m=cur.getMonth()+1;
+    const mFirst=`${y}-${String(m).padStart(2,'0')}-01`;
+    const mLast=`${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`;
+    // semanas que cobrem o mês (limitadas ao intervalo global no início)
+    const wStart=parseISO(mondayOfWeek(mFirst>UI.calStart?mFirst:UI.calStart));
+    const wEnd=parseISO(sundayOfWeek(mLast<UI.calLast?mLast:UI.calLast));
+    let rows='';
+    let dd=new Date(wStart);
+    while(dd<=wEnd){
+      let tds='';
+      for(let k=0;k<7;k++){
+        const date=iso(dd);
+        const row=UI.rowByDate[date];
+        const inThisMonth=(date>=mFirst && date<=mLast);
+        if(!row || !inThisMonth){
+          // dia de outro mês (ou fora do intervalo) -> célula neutra, sem duplicar edição
+          const lbl=row?`<div class="dnum">${parseISO(date).getDate()}</div>`:'';
+          tds+=`<td class="blank">${lbl}</td>`;
+        } else {
+          const kind=dayKind(date);
+          const cls=[kind!=='weekday'?'fds':'', !row.inMonth?'out':''].filter(Boolean).join(' ');
+          tds+=`<td class="${cls}" title="${kind==='holiday'?holidayName(date):''}">
+            <div class="dnum">${parseISO(date).getDate()}${kind==='holiday'?' 🎌':''}</div>
+            <select data-d="${date}" data-f="work">${workOpts(row.work)}</select>
+            <select class="banco" data-d="${date}" data-f="banco">${bancoOpts(row.banco)}</select></td>`;
+        }
+        dd=addDays(dd,1);
+      }
+      rows+=`<tr>${tds}</tr>`;
+    }
+    blocks.push(`<div class="mcal"><h3>${monthsPT[m-1]} ${y}</h3>
+      <table><thead><tr>${DOW.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`);
+    cur=new Date(y, m, 1);
+  }
+  host.innerHTML=blocks.join('');
+  host.querySelectorAll('select').forEach(el=>el.addEventListener('change',e=>{
+    const date=e.target.dataset.d, f=e.target.dataset.f;
+    if(UI.rowByDate[date]) UI.rowByDate[date][f]=e.target.value;
   }));
 }
 
@@ -1199,15 +1291,12 @@ function renderGrid(){
    Banco Dia = 08:00–20:00 · Banco Noite = 20:00–08:00 · ambos = 08:00–08:00 (24h). */
 function collectEntries(){
   if(UI.inputMode==='manual'){
-    return UI.manualRows.filter(r=>r.rotina||r.tarde||r.extra||r.bancoDia||r.bancoNoite)
+    return UI.manualRows.filter(r=>r.work||r.banco)
       .map(r=>{
-        const regularHours=(r.rotina?rotinaHours():0)+(r.tarde?tardeHours():0)+(r.extra?extraHours():0);
-        let start='', end='';
-        if(r.bancoDia && r.bancoNoite){ start='08:00'; end='08:00'; }      // 24 h
-        else if(r.bancoDia){ start='08:00'; end='20:00'; }
-        else if(r.bancoNoite){ start='20:00'; end='08:00'; }
+        const regularHours=workHoursOf(r.work);
+        const b=BANCO_TYPES[r.banco];
         return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
-                er:!!(r.bancoDia||r.bancoNoite), start, end, prevention:false};
+                er:!!b, start:b?b.start:'', end:b?b.end:'', prevention:false};
       });
   }
   // PDF -> grelha
