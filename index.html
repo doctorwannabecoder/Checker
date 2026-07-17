@@ -517,17 +517,20 @@ function classifyErShift(dateISO, startMin, durMin, contractFillMin){
   }
   return {erMin, tnMin, contractDayMin};
 }
+/* NB: não arredondar aqui — os valores são acumulados com precisão total e só
+   arredondados na apresentação. Arredondar por turno introduzia cêntimos de
+   erro no total do mês (ex.: 700.004 dava 718,68 em vez de 718,66). */
 function makeAlloc(key, hours, eur, extra){
   const c = key && PAYROLL_RULES.codes[key];
   const base = c ? {key,code:c.code,desc:c.desc,isER:c.isER,isTN:c.isTN,confirm:c.confirm,missing:c.missing}
                  : {key:key||'??',code:'??',desc:'Código não mapeado',isER:false,isTN:false,confirm:true,missing:true};
-  return Object.assign(base, {hours:round2(hours), eur:round2(eur||0)}, extra||{});
+  return Object.assign(base, {hours:hours, eur:(eur||0)}, extra||{});
 }
 function addAlloc(map, key, hours, eur, extra){
   if(hours<=0 && (!eur||eur<=0)) return;
   key = key||'??';
   if(!map[key]) map[key]=makeAlloc(key,hours,eur,extra);
-  else { map[key].hours=round2(map[key].hours+hours); map[key].eur=round2(map[key].eur+(eur||0)); }
+  else { map[key].hours=map[key].hours+hours; map[key].eur=map[key].eur+(eur||0); }
 }
 
 /* Calcula uma entrada-dia. contractRem = horas de contrato ainda por cumprir
@@ -625,7 +628,7 @@ function computeMonth(entries, ctx){
       weekTotals[wk]=(weekTotals[wk]||0)+dayHours;
       if(e.inMonth===false) continue;   // fronteira: conta p/ contrato, não p/ resumo
       shifts.push(r); r.warnings.forEach(w=>warnings.push(w));
-      r.allocations.forEach(a=>{ const row=ensure(a); row.hours=round2(row.hours+a.hours); row.eur=round2(row.eur+(a.eur||0)); });
+      r.allocations.forEach(a=>{ const row=ensure(a); row.hours+=a.hours; row.eur+=(a.eur||0); });
     }
   });
   Object.entries(weekTotals).forEach(([wk,h])=>{
