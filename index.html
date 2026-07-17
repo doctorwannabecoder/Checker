@@ -134,41 +134,70 @@
 <main>
   <div id="confirmBanner"></div>
 
-  <!-- 1 · período + contrato -->
+  <!-- 1 · contrato -->
   <div class="card">
-    <h2>1 · Período e contrato</h2>
+    <h2>1 · Contrato</h2>
     <div class="row">
-      <label>Mês <select id="selMonth"></select></label>
-      <label>Ano <input type="number" id="selYear" min="2000" max="2100" step="1" style="width:100px"/></label>
       <label>Horário semanal base <select id="selWeeklyBase"></select></label>
       <label>Redução de horário (legal) <select id="selWeeklyRed"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small" id="dailyContractInfo"></span></label>
-      <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
     </div>
     <div class="row" style="margin-top:10px">
       <label>Categoria <select id="selCategory" onchange="onCategoryChange()"></select></label>
       <label>Regime <select id="selRegime" onchange="updateWeeklyHint()"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small mono" id="salaryHint"></span></label>
     </div>
-    <p class="small">O horário base (40 ou 42h) menos a redução legal (0–7h) dá o
-      <b>horário semanal efetivo</b> (<span class="mono" id="weeklyHint"></span>), que define a base diária
-      contratada. A <b>categoria/regime</b> (tabela SIM 2026) define o vencimento base e o €/hora usados
-      para valorizar ER e TN. O cálculo de ER/TN considera <b>semanas completas</b> (Seg–Dom nas fronteiras).</p>
+    <div class="row" style="margin-top:10px">
+      <label>Rotina (h/dia) <select id="selRotinaH"></select></label>
+      <label>Tarde (h/dia) <select id="selTardeH"></select></label>
+      <label>Extra (h/dia) <select id="selExtraH"></select></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">Horas de cada tipo de trabalho normal, usadas na inserção manual.</span></label>
+    </div>
   </div>
 
-  <!-- 2 · entrada -->
+  <!-- 2 · período -->
   <div class="card">
-    <h2>2 · Entrada do plano mensal</h2>
+    <h2>2 · Período</h2>
+    <div class="row">
+      <label>Tipo <select id="selPeriodType" onchange="onPeriodTypeChange()">
+        <option value="mensal" selected>Mensal</option>
+        <option value="anual">Anual</option>
+      </select></label>
+      <label id="lblMonth">Mês <select id="selMonth"></select></label>
+      <label>Ano <input type="number" id="selYear" min="2000" max="2100" step="1" style="width:100px"/></label>
+      <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
+      <label class="inline" style="margin-bottom:6px"><span class="small" id="periodHint"></span></label>
+    </div>
+  </div>
+
+  <!-- 3 · entrada -->
+  <div class="card">
+    <h2>3 · Entrada</h2>
     <div class="tabs">
-      <button id="tabManual" onclick="switchInputTab('manual')">✍️ Inserção manual</button>
-      <button id="tabPaste" class="active" onclick="switchInputTab('paste')">📄 Importar PDF</button>
+      <button id="tabManual" class="active" onclick="switchInputTab('manual')">✍️ Inserção manual</button>
+      <button id="tabPaste" onclick="switchInputTab('paste')">📄 Importar PDF</button>
     </div>
 
-    <!-- PASTE: 3 partes -->
-    <div id="panePaste" class="pane active">
-      <!-- IMPORTAR PDF (recomendado) -->
+    <!-- MANUAL (predefinição) -->
+    <div id="paneManual" class="pane active">
+      <p class="small">Marque por dia o que fez. <b>Rotina/Tarde/Extra</b> usam as horas definidas no ponto 1.
+        <b>Banco Dia</b> = 08:00–20:00 · <b>Banco Noite</b> = 20:00–08:00. Semana contada de <b>Segunda a Domingo</b>.</p>
+      <div style="overflow:auto;max-height:560px">
+        <table id="manualTable">
+          <thead><tr>
+            <th>Data</th><th>Sem.</th>
+            <th class="center">Rotina</th><th class="center">Tarde</th><th class="center">Extra</th>
+            <th class="center">Banco Dia</th><th class="center">Banco Noite</th><th>Obs.</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PDF (só em modo mensal) -->
+    <div id="panePaste" class="pane">
       <div style="border:1px solid var(--accent);border-radius:10px;padding:12px;margin-bottom:14px;background:#0b2233">
-        <div style="font-weight:700;color:var(--accent2);margin-bottom:6px">📄 Importar PDF do horário (recomendado)</div>
+        <div style="font-weight:700;color:var(--accent2);margin-bottom:6px">📄 Importar PDF do horário</div>
         <div class="row">
           <label class="btn" style="cursor:pointer">📂 Escolher PDF…
             <input type="file" accept="application/pdf,.pdf" id="pdfFile" style="display:none" onchange="onPdfFile(event)">
@@ -180,21 +209,6 @@
         </div>
       </div>
       <div id="parseWarnings"></div>
-    </div>
-
-    <!-- MANUAL -->
-    <div id="paneManual" class="pane">
-      <p class="small">Marque por dia. <b>RW</b>=regular · <b>ER</b>=escala de recurso · <b>Prev</b>=prevenção.
-        As horas TN são deduzidas automaticamente das horas noturnas.</p>
-      <div style="overflow:auto;max-height:560px">
-        <table id="manualTable">
-          <thead><tr>
-            <th>Dia</th><th>Sem.</th><th class="center">RW</th><th class="center">ER</th><th class="center">Prev</th>
-            <th>Início</th><th>Fim</th><th class="num">Horas</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
     </div>
   </div>
 
@@ -386,9 +400,10 @@ const ER_MULTIPLIER = {
   DOM: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} },
   FER: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} }
 };
-// Suplemento de trabalho noturno sobre horas normais (contrato) — % do €/hora.
-// SUPOSIÇÃO: 25% (Código do Trabalho). Confirmar para a carreira médica.
-const TN_UPLIFT = { pct:0.25, confirm:true };
+/* Suplemento de trabalho noturno (TN, 211.001) — fator sobre o €/hora ER.
+   VALIDADO com o recibo de maio: 22h → 224,56 € ⇒ 10,21 €/h
+   = 50% do €/hora normal (20,42) = 0,625 × €/hora ER (16,333). */
+const TN_UPLIFT = { pct:0.625, confirm:false };
 
 /* Valor/hora base do trabalho EXTRAORDINÁRIO (ER). VALIDADO com o recibo de
    maio (Assistente geral): R = vencimento_base × 12 / 2600 = 3538,87×12/2600 =
@@ -527,6 +542,15 @@ function computeEntry(entry, ctx, contractRem){
   let totalH=durMin>0?durMin/60:0, tnH=0, erDayH=0, erNightH=0, contractDayH=0, erEur=0, tnEur=0;
   let contractRemAfter=(typeof contractRem==='number')?contractRem:Infinity;
 
+  // 1) Trabalho normal do dia (Rotina/Tarde/Extra) — pago pela base e consome
+  //    o contrato semanal ANTES do turno de banco (ER) do mesmo dia.
+  const regH=(typeof entry.regularHours==='number' && entry.regularHours>0)?entry.regularHours:0;
+  if(regH>0){
+    addAlloc(allocMap,'RW', regH, 0, {});
+    if(contractRemAfter!==Infinity) contractRemAfter=contractRemAfter-regH;
+  }
+
+  // 2) Turno de banco (ER)
   if(entry.er && durMin>0 && startMin!=null){
     const shiftH=durMin/60;
     const avail=(contractRemAfter===Infinity)?0:Math.max(0,contractRemAfter);
@@ -557,10 +581,6 @@ function computeEntry(entry, ctx, contractRem){
     warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir contrato/extraordinário e diurno/noturno.`});
   } else if(entry.prevention && durMin>0){
     addAlloc(allocMap,'PREV', totalH, 0, {});
-  } else if(entry.regular){
-    const rwH=(durMin>0)?totalH:ctx.dailyContractHours;
-    addAlloc(allocMap,'RW', rwH, 0, {});
-    if(contractRemAfter!==Infinity) contractRemAfter=contractRemAfter-rwH;
   }
 
   const allocations=Object.values(allocMap).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
@@ -863,7 +883,7 @@ function structurePdf(frags){
 /* =========================================================================
    PARTE E — UI: estado + seletores + grelha
    ========================================================================= */
-let UI = { inputMode:'paste', manualRows:[], gridRows:[], lastResult:null, name:'' };
+let UI = { inputMode:'manual', manualRows:[], gridRows:[], lastResult:null, name:'' };
 let PDF_DATA=null;     // resultado de structurePdf()
 let PDF_LEGEND={};     // legenda lida do PDF (código -> {start,end,hours,worked})
 
@@ -895,6 +915,13 @@ function fillRegimeOptions(){
 }
 function onCategoryChange(){ fillRegimeOptions(); updateWeeklyHint(); }
 
+/* Tipos de trabalho normal (horas definidas no ponto 1) e período. */
+function rotinaHours(){return parseFloat(document.getElementById('selRotinaH').value)||0;}
+function tardeHours(){return parseFloat(document.getElementById('selTardeH').value)||0;}
+function extraHours(){return parseFloat(document.getElementById('selExtraH').value)||0;}
+function periodType(){const e=document.getElementById('selPeriodType');return e?e.value:'mensal';}
+function isAnual(){return periodType()==='anual';}
+
 function initSelectors(){
   const months=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const sm=document.getElementById('selMonth');
@@ -907,13 +934,34 @@ function initSelectors(){
   const sc=document.getElementById('selCategory');
   sc.innerHTML=Object.entries(SALARY_TABLE).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
   fillRegimeOptions();
+  // Rotina e Tarde: 4–8 h ; Extra: 1–10 h
+  const mk=(from,to,def)=>{let o='';for(let h=from;h<=to;h++)o+=`<option value="${h}" ${h===def?'selected':''}>${h} h</option>`;return o;};
+  document.getElementById('selRotinaH').innerHTML=mk(4,8,7);
+  document.getElementById('selTardeH').innerHTML=mk(4,8,6);
+  document.getElementById('selExtraH').innerHTML=mk(1,10,4);
   sb.addEventListener('change',updateWeeklyHint); sr.addEventListener('change',updateWeeklyHint);
-  updateWeeklyHint();
+  updateWeeklyHint(); updatePeriodHint();
+}
+function updatePeriodHint(){
+  const el=document.getElementById('periodHint'); if(!el) return;
+  el.textContent=isAnual()
+    ? `Ano completo (Jan–Dez). O PDF só está disponível em modo mensal.`
+    : `Mês + dias do mês anterior que pertencem à semana do dia 1.`;
+}
+function onPeriodTypeChange(){
+  const anual=isAnual();
+  document.getElementById('lblMonth').style.display=anual?'none':'';
+  // PDF só faz sentido no modo mensal
+  const tp=document.getElementById('tabPaste');
+  tp.disabled=anual; tp.style.opacity=anual?0.4:1; tp.style.cursor=anual?'not-allowed':'pointer';
+  if(anual) switchInputTab('manual');
+  updatePeriodHint(); buildCalendar();
 }
 function updateWeeklyHint(){
   const base=weeklyBase(), red=weeklyReduction(), eff=currentWeekly();
-  document.getElementById('weeklyHint').textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
-  document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h · base diária ${dailyContractHours()} h`;
+  const wh=document.getElementById('weeklyHint');
+  if(wh) wh.textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
+  document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h (Seg–Dom) · base diária ${dailyContractHours()} h`;
   const sh=document.getElementById('salaryHint');
   if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/h ER ${eur(erHourly())} (normal ${eur(currentHourly())})`;
 }
@@ -1040,12 +1088,24 @@ function buildGridFromPdf(emp){
 }
 
 /* ---- MANUAL ---- */
+/* Constrói as linhas manuais. Mensal: mês + os dias do mês ANTERIOR que ainda
+   pertencem à semana (Seg–Dom) do dia 1. Anual: ano completo (Jan–Dez), também
+   com a semana de fronteira inicial. */
 function buildCalendar(){
-  const y=+document.getElementById('selYear').value, m=+document.getElementById('selMonth').value;
+  const y=+document.getElementById('selYear').value;
+  const m=+document.getElementById('selMonth').value;
+  const anual=isAnual();
+  const firstISO = anual ? `${y}-01-01` : `${y}-${String(m).padStart(2,'0')}-01`;
+  const lastISO  = anual ? `${y}-12-31`
+                         : `${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`;
+  const start=mondayOfWeek(firstISO);           // inclui dias do mês anterior da mesma semana
   UI.manualRows=[];
-  for(let d=1;d<=daysInMonth(y,m);d++){
-    UI.manualRows.push({date:`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
-      regular:false,er:false,prevention:false,start:'',end:'',hours:null});
+  let d=parseISO(start), end=parseISO(lastISO);
+  while(d<=end){
+    const date=iso(d);
+    UI.manualRows.push({date, inMonth:(date>=firstISO && date<=lastISO),
+      rotina:false, tarde:false, extra:false, bancoDia:false, bancoNoite:false});
+    d=addDays(d,1);
   }
   renderManualTable(); updateWeeklyHint();
 }
@@ -1053,21 +1113,18 @@ function renderManualTable(){
   const tb=document.querySelector('#manualTable tbody'); tb.innerHTML='';
   UI.manualRows.forEach((r,i)=>{
     const kind=dayKind(r.date), tr=document.createElement('tr');
-    if(kind!=='weekday')tr.style.background='#13203a';
-    tr.innerHTML=`<td>${parseISO(r.date).getDate()}${kind==='holiday'?' 🎌':''}</td><td class="small">${weekdayShort(r.date)}</td>
-      <td class="center"><input type="checkbox" data-i="${i}" data-f="regular" ${r.regular?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-i="${i}" data-f="er" ${r.er?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-i="${i}" data-f="prevention" ${r.prevention?'checked':''}></td>
-      <td><input type="time" data-i="${i}" data-f="start" value="${r.start}"></td>
-      <td><input type="time" data-i="${i}" data-f="end" value="${r.end}"></td>
-      <td class="num"><input type="number" min="0" max="24" step="0.5" data-i="${i}" data-f="hours" value="${r.hours??''}"></td>`;
+    const cls=[kind!=='weekday'?'r-fds':'', !r.inMonth?'r-extra':''].filter(Boolean).join(' ');
+    if(cls) tr.className=cls;
+    const cb=(f)=>`<td class="center"><input type="checkbox" data-i="${i}" data-f="${f}" ${r[f]?'checked':''}></td>`;
+    tr.innerHTML=`<td>${formatPT(r.date)}${kind==='holiday'?' 🎌':''}</td>
+      <td class="small">${weekdayShort(r.date)}</td>
+      ${cb('rotina')}${cb('tarde')}${cb('extra')}${cb('bancoDia')}${cb('bancoNoite')}
+      <td class="small">${!r.inMonth?'semana anterior':(kind==='holiday'?holidayName(r.date):'')}</td>`;
     tb.appendChild(tr);
   });
   tb.querySelectorAll('input').forEach(el=>el.addEventListener('change',e=>{
     const i=+e.target.dataset.i,f=e.target.dataset.f;
-    if(e.target.type==='checkbox')UI.manualRows[i][f]=e.target.checked;
-    else if(f==='hours')UI.manualRows[i][f]=e.target.value===''?null:parseFloat(e.target.value);
-    else UI.manualRows[i][f]=e.target.value;
+    UI.manualRows[i][f]=e.target.checked;
   }));
 }
 
@@ -1137,12 +1194,34 @@ function renderGrid(){
   }));
 }
 
+/* Normaliza as duas origens (manual / PDF) para a forma que o motor consome:
+   {date, inMonth, regularHours, er, start, end, prevention}
+   Banco Dia = 08:00–20:00 · Banco Noite = 20:00–08:00 · ambos = 08:00–08:00 (24h). */
 function collectEntries(){
-  const src=(UI.inputMode==='paste')?UI.gridRows:UI.manualRows;
-  return src.filter(r=>r.regular||r.er||r.prevention||r.start||r.end||(r.hours>0))
-            .map(r=>({date:r.date,regular:!!r.regular,er:!!r.er,prevention:!!r.prevention,
-                     start:r.start,end:r.end,hours:r.hours,rosterCode:r.roster||'',
-                     inMonth:(r.inMonth!==false)}));
+  if(UI.inputMode==='manual'){
+    return UI.manualRows.filter(r=>r.rotina||r.tarde||r.extra||r.bancoDia||r.bancoNoite)
+      .map(r=>{
+        const regularHours=(r.rotina?rotinaHours():0)+(r.tarde?tardeHours():0)+(r.extra?extraHours():0);
+        let start='', end='';
+        if(r.bancoDia && r.bancoNoite){ start='08:00'; end='08:00'; }      // 24 h
+        else if(r.bancoDia){ start='08:00'; end='20:00'; }
+        else if(r.bancoNoite){ start='20:00'; end='08:00'; }
+        return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
+                er:!!(r.bancoDia||r.bancoNoite), start, end, prevention:false};
+      });
+  }
+  // PDF -> grelha
+  return UI.gridRows.filter(r=>r.regular||r.er||r.prevention||r.start||r.end||(r.hours>0))
+    .map(r=>{
+      let regularHours=0;
+      if(r.regular && !r.er){
+        regularHours = (typeof r.hours==='number' && r.hours>0) ? r.hours
+          : (r.start&&r.end ? shiftDurationMin(timeToMin(r.start),timeToMin(r.end))/60 : dailyContractHours());
+      }
+      return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
+              er:!!r.er, start:r.start, end:r.end, hours:r.hours,
+              prevention:!!r.prevention, rosterCode:r.roster||''};
+    });
 }
 
 /* =========================================================================
@@ -1228,12 +1307,15 @@ function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 function renderAnnual(result){
   document.getElementById('annualCard').style.display='block';
   const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
-  const base=currentMonthlyBase(), monthExtra=result.totalExtraEur||0;
-  const baseAnnual=base*14, extraAnnual=monthExtra*12, total=baseAnnual+extraAnnual;
+  const base=currentMonthlyBase(), extra=result.totalExtraEur||0, anual=isAnual();
+  const baseAnnual=base*14;
+  const extraAnnual = anual ? extra : extra*12;   // anual: dados reais do ano; mensal: projeção ×12
+  const total=baseAnnual+extraAnnual;
   tb.innerHTML=
     `<tr><td>Vencimento base</td><td class="num small">${eur(base)} × 14</td><td class="num">${eur(baseAnnual)}</td></tr>`+
-    `<tr><td>Extra ER+TN (projeção deste mês)</td><td class="num small">${eur(monthExtra)} × 12</td><td class="num">${eur(extraAnnual)}</td></tr>`;
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, estimativa)</td><td class="num">${eur(total)}</td></tr>`;
+    `<tr><td>Extra ER+TN ${anual?'(ano inserido)':'(projeção deste mês)'}</td>`+
+    `<td class="num small">${anual?'soma real':eur(extra)+' × 12'}</td><td class="num">${eur(extraAnnual)}</td></tr>`;
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, ${anual?'dados inseridos':'estimativa'})</td><td class="num">${eur(total)}</td></tr>`;
 }
 
 /* =========================================================================
