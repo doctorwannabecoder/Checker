@@ -56,7 +56,7 @@
     display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   header h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-0.02em}
   header .sub{font-size:12px;color:var(--muted)}
-  main{max-width:1320px;margin:0 auto;padding:18px}
+  main{max-width:1680px;margin:0 auto;padding:18px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
   .card h2{margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--accent2);letter-spacing:-0.01em}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
@@ -113,17 +113,23 @@
   tr.r-fds td:first-child{color:var(--h24)}
   tr.r-extra{background:#10192e}
   /* Calendário de inserção manual — semanas na horizontal */
-  .mcal{margin-bottom:18px}
-  .mcal h3{margin:0 0 6px;font-size:13px;color:var(--accent2);font-weight:700;letter-spacing:-0.01em}
-  .mcal table{table-layout:fixed;width:100%;min-width:780px}
-  .mcal th{text-align:center;font-size:11px;padding:4px;position:static}
-  .mcal td{vertical-align:top;padding:4px;height:66px}
+  .mcal{margin-bottom:20px}
+  .mcal h3{margin:0 0 8px;font-size:13px;color:var(--accent2);font-weight:700;letter-spacing:-0.01em}
+  .mcal table{table-layout:fixed;width:100%;min-width:980px}
+  .mcal th{text-align:center;font-size:11px;padding:6px 4px;position:static}
+  .mcal td{vertical-align:top;padding:8px 6px;height:112px}
+  .mcal col.daycol{width:auto}
+  .mcal col.weekcol{width:190px}
+  .mcal th.weekcol,.mcal td.weeksum{border-left:2px solid var(--line)}
   .mcal td.out{background:#0d1526;opacity:.55}
   .mcal td.blank{background:#0b1220;border-color:#1e293b}
-  .mcal .dnum{font-size:11px;font-weight:700;color:var(--muted)}
+  .mcal .dnum{font-size:12px;font-weight:700;color:var(--muted)}
   .mcal td.fds .dnum{color:var(--h24)}
-  .mcal select{width:100%;padding:2px 4px;font-size:11px;margin-top:3px}
+  .mcal select{width:100%;padding:5px 6px;font-size:12px;margin-top:5px}
   .mcal select.banco{border-color:var(--day)}
+  .mcal td.weeksum{background:#0b1220;font-size:11px;line-height:1.6;vertical-align:middle}
+  .mcal td.weeksum b{color:var(--text)}
+  .mcal td.weeksum .muted{color:var(--muted)}
   @media print{
     header,.tabs,.toolbar,.noprint{display:none!important}
     body{background:#fff;color:#000}.card{border-color:#ccc;background:#fff}
@@ -135,7 +141,6 @@
 <header>
   <div>
     <h1>🧾 Verificador de ER / TN</h1>
-    <div class="sub">Autoconferência das horas de Escala de Recurso e Trabalho Noturno pagas no mês</div>
   </div>
 </header>
 
@@ -252,21 +257,6 @@
 
   <div id="validationCard" class="card" style="display:none">
     <h2>⚠️ Validação e avisos</h2><div id="validationArea"></div>
-  </div>
-
-  <!-- RESUMO SEMANAL -->
-  <div id="weeklyCard" class="card" style="display:none">
-    <h2>📅 Resumo semanal (Segunda–Domingo)</h2>
-    <p class="small">Uma linha por semana <b>completa</b> (inclui dias fora do mês/ano para o cálculo ser exato).
-      Se uma semana não atingir o horário contratado, o défice transita como acréscimo à semana seguinte.</p>
-    <div style="overflow-x:auto">
-      <table id="weeklyTable">
-        <thead><tr><th>Semana</th><th class="num">Contrato da semana</th>
-          <th class="num">Horas trabalhadas</th><th class="num">TN (h)</th><th class="num">ER (h)</th>
-          <th class="num">Valor extra (€)</th><th class="num">Défice</th></tr></thead>
-        <tbody></tbody><tfoot></tfoot>
-      </table>
-    </div>
   </div>
 
   <!-- OUTPUT 1 -->
@@ -444,8 +434,11 @@ const SALARY_TABLE = {
     geral:     {m:4865.94, h:28.07},
     plena:     {m:6082.43, h:35.09},
     exclusiva: {m:5904.52, h:32.44} } },
-  ife1: { label:'Internato Médico — ano 1', regimes:{ geral:{m:2245.48, h:12.95} } },
-  ife2: { label:'Internato Médico — ano 2', regimes:{ geral:{m:2516.53, h:14.52} } }
+  // Internato médico: agrupado em Anos 1-3 e Anos 4-6 (não ano a ano).
+  // NOTA: só há um valor por grupo — pode variar dentro do próprio grupo (por
+  // confirmar); usa-se o mesmo valor para todos os anos desse grupo.
+  ife1: { label:'Internato Médico — Anos 1-3', regimes:{ geral:{m:2245.48, h:12.95} } },
+  ife2: { label:'Internato Médico — Anos 4-6', regimes:{ geral:{m:2516.53, h:14.52} } }
 };
 const REGIME_LABELS = { geral:'Geral', plena:'Dedicação plena', exclusiva:'Dedicação exclusiva' };
 
@@ -1439,6 +1432,19 @@ function buildCalendar(){
   renderManualCalendar(); updateWeeklyHint();
 }
 
+/* Resumo de uma semana (coluna extra no calendário) — lê UI.lastResult
+   (preenchido por calculate()); antes de calcular, mostra só um traço. */
+function weekSummaryCellHtml(weekMonday){
+  const stats=UI.lastResult && UI.lastResult.weeklyStats;
+  const w=stats && stats.find(x=>x.monday===weekMonday);
+  if(!w) return `<span class="muted">— calcule para ver —</span>`;
+  const defBadge=w.deficitOut>0 ? `<span class="badge missing">−${w.deficitOut.toFixed(1)}h défice</span>` : '';
+  return `<div>Trabalhadas: <b>${w.workedH.toFixed(1)}h</b></div>
+    <div>TN: <b>${w.tnH.toFixed(1)}h</b> · ER: <b>${w.erH.toFixed(1)}h</b></div>
+    <div>Extra: <b>${eur(w.eur)}</b></div>
+    ${defBadge}`;
+}
+
 /* Calendário: um bloco por mês ESCOLHIDO (UI.periodRanges — não tem de ser
    contíguo). Cada dia tem 2 listas: trabalho normal + banco. Os dias de
    semanas de fronteira que NÃO pertencem a nenhum bloco escolhido (antes do
@@ -1446,7 +1452,9 @@ function buildCalendar(){
    (1.º/último), para que a semana completa seja sempre visível. Dentro do
    período, cada dia pertence sempre a um único bloco (o seu próprio mês),
    evitando duplicação; meses não escolhidos entre dois blocos simplesmente
-   não geram linhas (não há "buraco" a preencher). */
+   não geram linhas (não há "buraco" a preencher). A última coluna mostra o
+   resumo dessa semana (Output "Resumo semanal" já não precisa de estar
+   separado — fica também aqui, ao lado, depois de calcular). */
 function renderManualCalendar(){
   const host=document.getElementById('manualCal'); if(!host || !UI.periodRanges || !UI.periodRanges.length) return;
   const DOW=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
@@ -1479,6 +1487,7 @@ function renderManualCalendar(){
     let rows='';
     let dd=new Date(wStart);
     while(dd<=wEnd){
+      const weekMonday=iso(dd);   // dd está sempre numa Segunda no início desta iteração
       let tds='';
       for(let k=0;k<7;k++){
         const date=iso(dd);
@@ -1497,10 +1506,12 @@ function renderManualCalendar(){
         }
         dd=addDays(dd,1);
       }
-      rows+=`<tr>${tds}</tr>`;
+      rows+=`<tr>${tds}<td class="weeksum">${weekSummaryCellHtml(weekMonday)}</td></tr>`;
     }
     return `<div class="mcal"><h3>${monthsPT[bm.m-1]} ${bm.y}</h3>
-      <table><thead><tr>${DOW.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+      <table><colgroup>${DOW.map(()=>'<col class="daycol">').join('')}<col class="weekcol"></colgroup>
+      <thead><tr>${DOW.map(x=>`<th>${x}</th>`).join('')}<th class="weekcol">Semana</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
   });
   host.innerHTML=blocks.join('');
   host.querySelectorAll('select').forEach(el=>el.addEventListener('change',e=>{
@@ -1621,7 +1632,9 @@ function calculate(){
     initialDeficit:initialDeficitHours(), regime:currentRegime()};
   const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
   meta.innerHTML='';
-  renderValidation(result.warnings); renderWeekly(result.weeklyStats); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
+  renderValidation(result.warnings); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
+  // Atualiza a coluna "Semana" do calendário (ponto 3) com os totais agora calculados.
+  if(UI.inputMode==='manual') renderManualCalendar();
 
   const dl119Card=document.getElementById('dl119Card');
   const priorRow=document.getElementById('dl119PriorRow');
@@ -1641,31 +1654,6 @@ function calculate(){
     if(priorRow) priorRow.style.display='none';
     if(dl119Card) dl119Card.style.display='none';
   }
-}
-function renderWeekly(weeklyStats){
-  const card=document.getElementById('weeklyCard'); if(!card) return;
-  card.style.display='block';
-  const tb=document.querySelector('#weeklyTable tbody'), tf=document.querySelector('#weeklyTable tfoot');
-  if(!weeklyStats || !weeklyStats.length){ tb.innerHTML=`<tr><td colspan="7" class="muted">Sem semanas.</td></tr>`; tf.innerHTML=''; return; }
-  tb.innerHTML=weeklyStats.map(w=>{
-    const defBadge=w.deficitOut>0?`<span class="badge missing">−${w.deficitOut.toFixed(2)}h</span>`:'<span class="small muted">—</span>';
-    return `<tr><td>${formatPT(w.monday)}–${formatPT(w.sunday)} <span class="small muted">(${w.week})</span></td>
-      <td class="num">${w.target.toFixed(2)} h${w.deficitIn>0?` <span class="small muted">(+${w.deficitIn.toFixed(2)} défice)</span>`:''}</td>
-      <td class="num">${w.workedH.toFixed(2)}</td>
-      <td class="num">${w.tnH.toFixed(2)}</td>
-      <td class="num">${w.erH.toFixed(2)}</td>
-      <td class="num">${eur(w.eur)}</td>
-      <td class="num">${defBadge}</td></tr>`;
-  }).join('');
-  const sum=(f)=>weeklyStats.reduce((s,w)=>s+w[f],0);
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220">
-    <td>TOTAL (${weeklyStats.length} semana${weeklyStats.length===1?'':'s'})</td>
-    <td class="num">—</td>
-    <td class="num">${round2(sum('workedH')).toFixed(2)}</td>
-    <td class="num">${round2(sum('tnH')).toFixed(2)}</td>
-    <td class="num">${round2(sum('erH')).toFixed(2)}</td>
-    <td class="num">${eur(round2(sum('eur')))}</td>
-    <td class="num">${weeklyStats[weeklyStats.length-1].deficitOut>0?('−'+weeklyStats[weeklyStats.length-1].deficitOut.toFixed(2)+'h'):'—'}</td></tr>`;
 }
 function renderValidation(warnings){
   document.getElementById('validationCard').style.display='block';
