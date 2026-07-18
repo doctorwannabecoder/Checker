@@ -22,20 +22,17 @@
         holidayName, dayKind, isoWeekKey, PT_HOLIDAYS_FIXED.
     * Todas as regras de PAGAMENTO vivem em PAYROLL_RULES / CODE_MATRIX /
       SHIFT_CODE_MAP (topo do <script>). O que não foi confirmado está com
-      `confirm:true` / `missing:true` e aparece assinalado na UI.
+      `confirm:true` e aparece assinalado na UI.
+    * Não se usam números de código de recibo (ex.: 700.001) — cada categoria
+      de pagamento tem só um NOME (ex.: "DU · Diu · 1ª hora"), que chega para
+      comparar horas/valores com o recibo visualmente.
 
-  ENTRADA EM 3 PARTES (colar) — ver PARTE D:
-    Parte 1 = escala-base (nome + 1 código por dia; 1.º código = ÚLTIMO dia
-              do mês anterior; serve de "régua" de dias).
-    Parte 2 = turnos ER (esparso).
-    Parte 3 = prevenções (esparso).
-    Como o texto vem de PDF/texto (só espaços, sem tabulações), as Partes 2/3
-    NÃO alinham por posição. Solução: prefixar cada entrada com o número do
-    dia (ex.: "3 20:00-08:00"). Tudo cai numa grelha editável por dia.
+  ENTRADA: importação de PDF do horário (SISQUAL/PDFsharp) — ver PARTE D — ou
+  inserção manual num calendário (semanas na horizontal, Segunda–Domingo).
 
   SEMANA COMPLETA: para ER/TN semanais, o cálculo estende cada semana de
-  fronteira (Seg–Dom). Dias úteis sem turno/descanso são pré-preenchidos como
-  Trabalho Regular (RW).
+  fronteira (Seg–Dom), nas duas pontas do período. Dias úteis sem turno/
+  descanso são pré-preenchidos como Rotina (trabalho regular).
   =========================================================================
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -90,7 +87,6 @@
   .badge{font-size:11px;padding:2px 7px;border-radius:6px;background:#0b1220;border:1px solid var(--line);color:var(--muted)}
   .badge.code{background:#0b2233;border-color:var(--accent);color:var(--accent2);font-weight:700}
   .badge.confirm{background:#3a2a08;border-color:var(--warn);color:#fde68a;font-weight:700}
-  .badge.missing{background:#3a0d0d;border-color:var(--err);color:#fecaca;font-weight:700}
   .alert{padding:9px 12px;border-radius:8px;margin-bottom:8px;font-size:13px;border:1px solid}
   .alert.warn{background:#3a2a08;border-color:var(--warn);color:#fde68a}
   .alert.err{background:#3a0d0d;border-color:var(--err);color:#fecaca}
@@ -267,7 +263,7 @@
 
   <!-- OUTPUT 1 -->
   <div id="summaryCard" class="card" style="display:none">
-    <h2>Output 1 · Resumo mensal por código de pagamento</h2>
+    <h2>Output 1 · Resumo mensal por categoria de pagamento</h2>
     <div class="toolbar noprint">
       <button class="btn secondary" onclick="copySummary()">📋 Copiar</button>
       <button class="btn secondary" onclick="exportCSV('summary')">⬇️ CSV</button>
@@ -275,7 +271,7 @@
     </div>
     <div style="overflow-x:auto">
       <table id="summaryTable">
-        <thead><tr><th>Código</th><th>Descrição / Tipo</th><th class="num">Horas</th>
+        <thead><tr><th>Categoria</th><th>Descrição / Tipo</th><th class="num">Horas</th>
           <th class="num">Valor (€)</th><th>Notas</th></tr></thead>
         <tbody></tbody><tfoot></tfoot>
       </table>
@@ -314,8 +310,14 @@
    PARTE A — CONFIGURAÇÃO DE REGRAS DE PAGAMENTO (EDITÁVEL)
    -------------------------------------------------------------------------
    Editar AQUI para corrigir/confirmar regras. `confirm:true` => suposição
-   (badge amarelo). `missing:true` => código real ainda não fornecido
-   (badge vermelho "EM FALTA"); preencha o número e ponha missing:false.
+   (badge amarelo).
+
+   NOTA: esta folha NÃO usa os números de código do recibo (ex.: 700.001,
+   211.001). Trabalha só com o NOME de cada categoria de pagamento (ex.:
+   "DU · Diu · 1ª hora"), que é suficiente para comparar horas e valores
+   com o recibo — o utilizador faz a correspondência visualmente pelo
+   nome/horas/valor, não pelo número. Isto evita ter de manter um mapa de
+   números de código sempre atualizado.
    ========================================================================= */
 const PAYROLL_RULES = {
   // Janela de Trabalho Noturno (TN) para médicos: 20:00–08:00 (Tabela SIM /
@@ -328,45 +330,38 @@ const PAYROLL_RULES = {
   firstHourMinutes: { minutes: 60, confirm:false },
   limits: { maxDailyHours:24, maxWeeklyHours:48, confirm:true },
 
-  /* CÓDIGOS DE PAGAMENTO
-     key -> {code, desc, isER, isTN, confirm, missing}
-     Códigos FORNECIDOS pelo utilizador (confirmados):
-       700.001 E DUDiu1ªHosp · 700.002 E DUDiuSegHosp
-       700.006 E Sáb>13DDCDiuSegHosp · 700.009 E DomDDSDiu1ªHosp
-       700.010 E DomDDSDiuSegHosp · 211.001 TN DUNotOEHosp
-  */
+  /* CATEGORIAS DE PAGAMENTO — key -> {code, desc, isER, isTN, confirm}
+     `code` = etiqueta curta (mostrada na coluna "Categoria"); `desc` = descrição completa. */
   codes: {
     // --- ER dia útil, diurno ---
-    ER_DU_DIU_1:  {code:'700.001', desc:'ER · dia útil · diurno · 1ª hora',        isER:true, isTN:false, confirm:false, missing:false},
-    ER_DU_DIU_S:  {code:'700.002', desc:'ER · dia útil · diurno · seguintes',      isER:true, isTN:false, confirm:false, missing:false},
+    ER_DU_DIU_1:  {code:'DU · Diu · 1ª',   desc:'ER · dia útil · diurno · 1ª hora',        isER:true, isTN:false, confirm:false},
+    ER_DU_DIU_S:  {code:'DU · Diu · Seg',  desc:'ER · dia útil · diurno · seguintes',      isER:true, isTN:false, confirm:false},
     // --- ER dia útil, noturno ---
-    ER_DU_NOT_1:  {code:'700.003', desc:'ER · dia útil · noturno · 1ª hora',       isER:true, isTN:false, confirm:false, missing:false},
-    ER_DU_NOT_S:  {code:'700.004', desc:'ER · dia útil · noturno · seguintes',     isER:true, isTN:false, confirm:false, missing:false},
+    ER_DU_NOT_1:  {code:'DU · Not · 1ª',   desc:'ER · dia útil · noturno · 1ª hora',       isER:true, isTN:false, confirm:false},
+    ER_DU_NOT_S:  {code:'DU · Not · Seg',  desc:'ER · dia útil · noturno · seguintes',     isER:true, isTN:false, confirm:false},
     // --- ER Sábado >13h (DDC), diurno ---
-    ER_SAB_DIU_1: {code:'?', desc:'ER · Sáb>13h (DDC) · diurno · 1ª hora',         isER:true, isTN:false, confirm:true, missing:true},
-    ER_SAB_DIU_S: {code:'700.006', desc:'ER · Sáb>13h (DDC) · diurno · seguintes', isER:true, isTN:false, confirm:false, missing:false},
-    ER_SAB_NOT_1: {code:'?', desc:'ER · Sáb>13h (DDC) · noturno · 1ª hora',        isER:true, isTN:false, confirm:true, missing:true},
-    ER_SAB_NOT_S: {code:'?', desc:'ER · Sáb>13h (DDC) · noturno · seguintes',      isER:true, isTN:false, confirm:true, missing:true},
+    ER_SAB_DIU_1: {code:'Sáb · Diu · 1ª',  desc:'ER · Sáb>13h (DDC) · diurno · 1ª hora',   isER:true, isTN:false, confirm:false},
+    ER_SAB_DIU_S: {code:'Sáb · Diu · Seg', desc:'ER · Sáb>13h (DDC) · diurno · seguintes', isER:true, isTN:false, confirm:false},
+    ER_SAB_NOT_1: {code:'Sáb · Not · 1ª',  desc:'ER · Sáb>13h (DDC) · noturno · 1ª hora',  isER:true, isTN:false, confirm:false},
+    ER_SAB_NOT_S: {code:'Sáb · Not · Seg', desc:'ER · Sáb>13h (DDC) · noturno · seguintes',isER:true, isTN:false, confirm:false},
     // --- ER Domingo (DDS), diurno ---
-    ER_DOM_DIU_1: {code:'700.009', desc:'ER · Domingo (DDS) · diurno · 1ª hora',   isER:true, isTN:false, confirm:false, missing:false},
-    ER_DOM_DIU_S: {code:'700.010', desc:'ER · Domingo (DDS) · diurno · seguintes', isER:true, isTN:false, confirm:false, missing:false},
-    ER_DOM_NOT_1: {code:'?', desc:'ER · Domingo (DDS) · noturno · 1ª hora',        isER:true, isTN:false, confirm:true, missing:true},
-    ER_DOM_NOT_S: {code:'?', desc:'ER · Domingo (DDS) · noturno · seguintes',      isER:true, isTN:false, confirm:true, missing:true},
-    // --- ER Feriado (EM FALTA) ---
-    ER_FER_DIU_1: {code:'?', desc:'ER · feriado · diurno · 1ª hora',               isER:true, isTN:false, confirm:true, missing:true},
-    ER_FER_DIU_S: {code:'?', desc:'ER · feriado · diurno · seguintes',             isER:true, isTN:false, confirm:true, missing:true},
-    ER_FER_NOT_1: {code:'?', desc:'ER · feriado · noturno · 1ª hora',              isER:true, isTN:false, confirm:true, missing:true},
-    ER_FER_NOT_S: {code:'?', desc:'ER · feriado · noturno · seguintes',            isER:true, isTN:false, confirm:true, missing:true},
+    ER_DOM_DIU_1: {code:'Dom · Diu · 1ª',  desc:'ER · Domingo (DDS) · diurno · 1ª hora',   isER:true, isTN:false, confirm:false},
+    ER_DOM_DIU_S: {code:'Dom · Diu · Seg', desc:'ER · Domingo (DDS) · diurno · seguintes', isER:true, isTN:false, confirm:false},
+    ER_DOM_NOT_1: {code:'Dom · Not · 1ª',  desc:'ER · Domingo (DDS) · noturno · 1ª hora',  isER:true, isTN:false, confirm:false},
+    ER_DOM_NOT_S: {code:'Dom · Not · Seg', desc:'ER · Domingo (DDS) · noturno · seguintes',isER:true, isTN:false, confirm:false},
+    // --- ER Feriado ---
+    ER_FER_DIU_1: {code:'Fer · Diu · 1ª',  desc:'ER · feriado · diurno · 1ª hora',         isER:true, isTN:false, confirm:false},
+    ER_FER_DIU_S: {code:'Fer · Diu · Seg', desc:'ER · feriado · diurno · seguintes',       isER:true, isTN:false, confirm:false},
+    ER_FER_NOT_1: {code:'Fer · Not · 1ª',  desc:'ER · feriado · noturno · 1ª hora',        isER:true, isTN:false, confirm:false},
+    ER_FER_NOT_S: {code:'Fer · Not · Seg', desc:'ER · feriado · noturno · seguintes',      isER:true, isTN:false, confirm:false},
     // --- TN (acréscimo noturno) ---
-    // CONFIRMADO (recibo de maio): código e horas batem certo. "OE" no rótulo do recibo
-    // (DUNotOEHosp) fica por esclarecer, mas é só terminologia — não afeta o cálculo.
-    TN_DU:  {code:'211.001', desc:'TN · dia útil · noturno',     isER:false, isTN:true, confirm:false, missing:false},
-    TN_SAB: {code:'?',       desc:'TN · Sábado · noturno',       isER:false, isTN:true, confirm:true,  missing:true},
-    TN_DOM: {code:'?',       desc:'TN · Domingo · noturno',      isER:false, isTN:true, confirm:true,  missing:true},
-    TN_FER: {code:'?',       desc:'TN · feriado · noturno',      isER:false, isTN:true, confirm:true,  missing:true},
+    TN_DU:  {code:'TN · DU',  desc:'TN · dia útil · noturno', isER:false, isTN:true, confirm:false},
+    TN_SAB: {code:'TN · Sáb', desc:'TN · Sábado · noturno',   isER:false, isTN:true, confirm:false},
+    TN_DOM: {code:'TN · Dom', desc:'TN · Domingo · noturno',  isER:false, isTN:true, confirm:false},
+    TN_FER: {code:'TN · Fer', desc:'TN · feriado · noturno',  isER:false, isTN:true, confirm:false},
     // --- Outros ---
-    RW:   {code:'101.001', desc:'Remuneração base (trabalho regular contratado)', isER:false, isTN:false, confirm:false, missing:false},
-    PREV: {code:'PREV', desc:'Prevenção',                    isER:false, isTN:false, confirm:true, missing:true}
+    RW:   {code:'Base', desc:'Remuneração base (trabalho regular contratado)', isER:false, isTN:false, confirm:false},
+    PREV: {code:'Prev', desc:'Prevenção', isER:false, isTN:false, confirm:false}
   }
 };
 
@@ -427,8 +422,8 @@ const ER_MULTIPLIER = {
   DOM: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} },
   FER: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} }
 };
-/* Suplemento de trabalho noturno (TN, 211.001) — fator sobre o €/hora ER.
-   VALIDADO com o recibo de maio: 22h → 224,56 € ⇒ 10,21 €/h
+/* Suplemento de Trabalho Noturno (TN) — fator sobre o €/hora ER.
+   VALIDADO com um recibo real: 22h → 224,56 € ⇒ 10,21 €/h
    = 50% do €/hora normal (20,42) = 0,625 × €/hora ER (16,333). */
 const TN_UPLIFT = { pct:0.625, confirm:false };
 
@@ -533,11 +528,11 @@ function classifyErShift(dateISO, startMin, durMin, contractFillMin){
 }
 /* NB: não arredondar aqui — os valores são acumulados com precisão total e só
    arredondados na apresentação. Arredondar por turno introduzia cêntimos de
-   erro no total do mês (ex.: 700.004 dava 718,68 em vez de 718,66). */
+   erro no total do mês (validado contra um recibo real). */
 function makeAlloc(key, hours, eur, extra){
   const c = key && PAYROLL_RULES.codes[key];
-  const base = c ? {key,code:c.code,desc:c.desc,isER:c.isER,isTN:c.isTN,confirm:c.confirm,missing:c.missing}
-                 : {key:key||'??',code:'??',desc:'Código não mapeado',isER:false,isTN:false,confirm:true,missing:true};
+  const base = c ? {key,code:c.code,desc:c.desc,isER:c.isER,isTN:c.isTN,confirm:c.confirm}
+                 : {key:key||'??',code:'??',desc:'Categoria não mapeada (erro interno)',isER:false,isTN:false,confirm:true};
   return Object.assign(base, {hours:hours, eur:(eur||0)}, extra||{});
 }
 function addAlloc(map, key, hours, eur, extra){
@@ -603,8 +598,6 @@ function computeEntry(entry, ctx, contractRem){
       tnH+=h; tnEur+=eur;
     });
     Object.values(cls.contractDayMin).forEach(mins=>{ contractDayH+=mins/60; });
-    Object.values(allocMap).filter(a=>a.missing).forEach(a=>warnings.push({type:'warn',
-      msg:`${date}: ${a.desc} (${a.hours.toFixed(2)}h) — código de recibo por confirmar em PAYROLL_RULES.codes.`}));
   } else if(entry.er && durMin>0){
     warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir contrato/extraordinário e diurno/noturno.`});
   } else if(entry.prevention && durMin>0){
@@ -626,7 +619,7 @@ function computeEntry(entry, ctx, contractRem){
 function computeMonth(entries, ctx){
   const shifts=[], warnings=[], summaryMap={}, weekTotals={}, weeklyStats=[];
   function ensure(a){
-    if(!summaryMap[a.key]) summaryMap[a.key]={key:a.key,code:a.code,desc:a.desc,isER:a.isER,isTN:a.isTN,confirm:a.confirm,missing:a.missing,hours:0,eur:0};
+    if(!summaryMap[a.key]) summaryMap[a.key]={key:a.key,code:a.code,desc:a.desc,isER:a.isER,isTN:a.isTN,confirm:a.confirm,hours:0,eur:0};
     return summaryMap[a.key];
   }
   // Agrupar por semana ISO e processar em ordem cronológica (contrato semanal).
@@ -1033,12 +1026,11 @@ function updateWeeklyHint(){
 }
 
 function renderConfirmBanner(){
-  const conf=[], miss=[];
-  Object.values(PAYROLL_RULES.codes).forEach(c=>{ if(c.missing)miss.push(c.desc); else if(c.confirm)conf.push(c.code); });
+  const conf=[];
+  Object.values(PAYROLL_RULES.codes).forEach(c=>{ if(c.confirm)conf.push(c.code); });
   if(PAYROLL_RULES.nightWindow.confirm) conf.unshift(`janela noturna ${PAYROLL_RULES.nightWindow.startHour}:00–0${PAYROLL_RULES.nightWindow.endHour}:00`);
   if(PAYROLL_RULES.saturdaySplitHour.confirm) conf.push(`Sábado>13h=DDC`);
   const el=document.getElementById('confirmBanner'); let html='';
-  if(miss.length) html+=`<div class="alert err"><b>⛔ Códigos EM FALTA</b> (preencha em <span class="mono">PAYROLL_RULES.codes</span>): ${[...new Set(miss)].slice(0,12).join(' · ')}${miss.length>12?' …':''}.</div>`;
   if(conf.length) html+=`<div class="alert warn"><b>⚠️ Precisa de confirmação:</b> ${[...new Set(conf)].join(' · ')}.</div>`;
   el.innerHTML=html;
 }
@@ -1390,18 +1382,15 @@ function renderValidation(warnings){
   area.innerHTML=errs.map(w=>`<div class="alert err">⛔ ${w.msg}</div>`).join('')+warns.map(w=>`<div class="alert warn">⚠️ ${w.msg}</div>`).join('');
 }
 function codeBadges(a){
-  let b='';
-  if(a.missing) b+=` <span class="badge missing">EM FALTA</span>`;
-  else if(a.confirm) b+=` <span class="badge confirm">confirmar</span>`;
-  return b;
+  return a.confirm ? ` <span class="badge confirm">confirmar</span>` : '';
 }
 function renderSummary(summary,result){
   document.getElementById('summaryCard').style.display='block';
   const tb=document.querySelector('#summaryTable tbody'), tf=document.querySelector('#summaryTable tfoot');
   const baseEur=currentMonthlyBase();
-  // garantir uma linha de vencimento base (101.001), mesmo sem dias regulares
+  // garantir uma linha de vencimento base, mesmo sem dias regulares
   const rows=summary.slice();
-  if(!rows.some(r=>r.key==='RW')) rows.unshift({key:'RW',code:'101.001',desc:'Remuneração base',hours:0,eur:0,isER:false,isTN:false,confirm:false,missing:false});
+  if(!rows.some(r=>r.key==='RW')) rows.unshift({key:'RW',code:'Base',desc:'Remuneração base',hours:0,eur:0,isER:false,isTN:false,confirm:false});
   if(!rows.length){tb.innerHTML=`<tr><td colspan="5" class="muted">Sem horas.</td></tr>`;tf.innerHTML='';return;}
   tb.innerHTML=rows.map(r=>{
     const isBase=(r.key==='RW');
@@ -1445,7 +1434,7 @@ function renderShifts(shifts){
         <span>Horas totais: <b>${s.totalH.toFixed(2)}</b></span>
         <span>Contrato: <b>${(s.contractDayH+s.tnH).toFixed(2)} h</b> (TN noturno ${s.tnH.toFixed(2)})</span>
         <span>ER extraordinário: <b>${(s.erDayH+s.erNightH).toFixed(2)} h</b> (D ${s.erDayH.toFixed(2)} / N ${s.erNightH.toFixed(2)})</span></div>
-      <div class="small muted">Repartição por código de pagamento:</div>${allocs}${w}</div>`;
+      <div class="small muted">Repartição por categoria de pagamento:</div>${allocs}${w}</div>`;
   }).join('');
 }
 function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
@@ -1471,11 +1460,11 @@ function toast(msg,err){const t=document.createElement('div');t.textContent=msg;
   t.style.cssText=`position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:${err?'var(--err)':'var(--ok)'};color:#06283b;padding:10px 18px;border-radius:10px;font-weight:700;z-index:99`;
   document.body.appendChild(t);setTimeout(()=>t.remove(),1800);}
 function copyToClipboard(text,ok){navigator.clipboard.writeText(text).then(()=>toast(ok||'Copiado!'),()=>toast('Falha ao copiar.',true));}
-function summaryToText(){if(!UI.lastResult)return '';const L=['Código\tDescrição\tHoras\tValor(€)'];
+function summaryToText(){if(!UI.lastResult)return '';const L=['Categoria\tDescrição\tHoras\tValor(€)'];
   const base=currentMonthlyBase();
   UI.lastResult.summary.forEach(r=>{const v=(r.key==='RW')?base:(r.eur||0); L.push(`${r.code}\t${r.desc}\t${r.hours.toFixed(2)}\t${((r.key==='RW'||r.isER||r.isTN)?v:0).toFixed(2)}`);});
   return L.join('\n');}
-function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício\tFim\tTotalER\tTN\tValor(€)\tCódigos'];
+function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício\tFim\tTotalER\tTN\tValor(€)\tCategorias'];
   UI.lastResult.shifts.filter(s=>s.isER).forEach(s=>{const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
     L.push(`${formatPT(s.date)}\t${s.weekday}\t${s.start}\t${s.end}\t${(s.erDayH+s.erNightH).toFixed(2)}\t${s.tnH.toFixed(2)}\t${s.shiftEur.toFixed(2)}\t${c}`);});return L.join('\n');}
 function copySummary(){copyToClipboard(summaryToText(),'Resumo copiado!');}
@@ -1484,11 +1473,11 @@ function exportCSV(which){
   if(!UI.lastResult){toast('Calcule primeiro.',true);return;}
   const sep=';'; let csv,name; const base=currentMonthlyBase();
   if(which==='summary'){
-    csv='Codigo;Descricao;Horas;Valor(EUR)\n'+UI.lastResult.summary.map(r=>{const v=(r.key==='RW')?base:(r.eur||0);
+    csv='Categoria;Descricao;Horas;Valor(EUR)\n'+UI.lastResult.summary.map(r=>{const v=(r.key==='RW')?base:(r.eur||0);
       return [r.code,`"${r.desc}"`,r.hours.toFixed(2),((r.key==='RW'||r.isER||r.isTN)?v:0).toFixed(2)].join(sep);}).join('\n');
     name='resumo_er_tn.csv';
   } else {
-    csv='Data;Dia;Inicio;Fim;TotalER;TN;Valor(EUR);Codigos\n'+UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
+    csv='Data;Dia;Inicio;Fim;TotalER;TN;Valor(EUR);Categorias\n'+UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
       const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
       return [formatPT(s.date),s.weekday,s.start,s.end,(s.erDayH+s.erNightH).toFixed(2),s.tnH.toFixed(2),s.shiftEur.toFixed(2),`"${c}"`].join(sep);}).join('\n');
     name='detalhe_er_tn.csv';
