@@ -166,6 +166,11 @@
       <label>Défice de horas inicial <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
       <label class="inline" style="margin-bottom:6px"><span class="small">Horas em falta transitadas de antes do período em análise — somam-se ao contrato da 1ª semana.</span></label>
     </div>
+    <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+      <label class="inline"><input type="checkbox" id="chkDL119" onchange="calculate()"/>
+        <span>Incentivo excecional <b>DL 119/2026</b> (horas ER além do limite legal anual)</span></label>
+      <span class="badge confirm">opcional · vários pontos por confirmar</span>
+    </div>
   </div>
 
   <!-- 2 · período -->
@@ -303,6 +308,34 @@
       </table>
     </div>
   </div>
+
+  <!-- OUTPUT 4 · DL 119/2026 (opcional) -->
+  <div id="dl119Card" class="card" style="display:none">
+    <h2>Output 4 · Incentivo excecional DL 119/2026 <span class="badge confirm">vários pontos por confirmar</span></h2>
+    <p class="small">Só se aplica a partir de um <b>bloco completo (48h)</b> de excesso sobre o limite legal anual
+      (250h dedicação plena · 150h restantes regimes). Abaixo disso, as horas mantêm-se como ER normal.
+      A partir daí, essas horas passam a valer <b>1×€/hora simples</b> (sem multiplicador) + o valor do bloco —
+      não é cumulativo com o ER normal (Art.º 4º/6). O incentivo <b>não</b> conta para o vencimento base
+      nem para outros suplementos (Art.º 7º), por isso é sempre uma linha à parte.</p>
+    <div id="dl119Summary"></div>
+    <div style="overflow-x:auto">
+      <table id="dl119BlocksTable">
+        <thead><tr><th>Bloco</th><th class="num">Horas</th><th class="num">%</th>
+          <th class="center">Majorado (Art.5º)</th><th class="num">Valor (€)</th></tr></thead>
+        <tbody></tbody><tfoot></tfoot>
+      </table>
+    </div>
+    <details style="margin-top:10px">
+      <summary>Condição de majoração (Art.5º) — semanas com ≥48h ao Sáb/Dom (janela deslizante, últimas 8 semanas)</summary>
+      <p class="small">A majoração também exige o médico disponibilizar-se para um novo bloco de 48h — isso é uma
+        declaração administrativa que a ferramenta não consegue ler do calendário; confirme manualmente por
+        bloco, na coluna acima, apenas quando souber que essa disponibilização foi feita e aceite.</p>
+      <div style="overflow-x:auto"><table id="dl119WeeksTable">
+        <thead><tr><th>Semana</th><th class="num">Horas Sáb/Dom na janela</th><th>Condição (≥48h)</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </details>
+  </div>
 </main>
 
 <script>
@@ -412,6 +445,83 @@ const SALARY_TABLE = {
   ife2: { label:'Internato Médico — ano 2', regimes:{ geral:{m:2516.53, h:14.52} } }
 };
 const REGIME_LABELS = { geral:'Geral', plena:'Dedicação plena', exclusiva:'Dedicação exclusiva' };
+
+/* =========================================================================
+   DL 119/2026, DE 17 DE JUNHO — Incentivo remuneratório excecional (médicos
+   SNS, trabalho além do limite legal anual de suplementar, rede de urgência/
+   UCI/cuidados intermédios). Texto oficial fornecido pelo utilizador.
+   FUNCIONALIDADE OPCIONAL — desligada por defeito (toggle no ponto 1).
+   -------------------------------------------------------------------------
+   REGRAS (conforme o diploma):
+   • Art.4º/2: só se aplica a horas ER (extraordinário) além do limite ANUAL
+     de trabalho suplementar: 250h (regime referido no art.13º/1/c do
+     DL 103/2023 — associado publicamente a "dedicação plena"; CONFIRMAR)
+     ou 150h (restantes regimes).
+   • Art.4º/3: por cada bloco de 48h de excesso, uma percentagem do
+     vencimento base mensal. O bloco 4 está aqui como 52,5% — o diploma
+     publicado tem 42,5%, mas a tabela majorada do art.5º (todos os blocos
+     ×1,2 exatos) só bate certo com 52,5%, e foi o valor que o Governo
+     confirmou publicamente ter corrigido. O valor original fica registado
+     para referência.
+   • Art.4º/4: o último bloco, se incompleto, é pago proporcionalmente:
+     (valor_do_bloco / 48) × horas do bloco incompleto.
+   • Art.4º/5+6: o incentivo já inclui a penosidade de noite/feriado/
+     descanso, e NÃO é cumulativo com o DL 62/79 (a base dos multiplicadores
+     ER 700.x já usados nesta ferramenta). CONFIRMADO PELO UTILIZADOR: as
+     horas só entram neste regime a partir do bloco completo (48h de
+     excesso); abaixo disso mantêm o ER normal. A partir daí, essas horas
+     passam a valer 1×R simples (sem multiplicador ER) + o valor do bloco.
+   • Art.5º: majoração — tabela alternativa (~×1,2), condicional a (a) ≥48h
+     de trabalho ao Sáb/Dom nas ÚLTIMAS 8 semanas (janela deslizante,
+     CONFIRMADO PELO UTILIZADOR) e (b) o médico disponibilizar-se para um
+     novo bloco de 48h — (b) é uma declaração administrativa, não é
+     detetável a partir do calendário, por isso fica como confirmação
+     manual por bloco.
+   • Art.7º: o incentivo NÃO conta para o vencimento base nem para outros
+     suplementos — por isso fica sempre como linha própria, nunca somado
+     ao ×14 anual nem a outros cálculos. */
+const DL119_RULES = {
+  enabled: false,           // toggle — controlado pela checkbox #chkDL119
+  blockHours: 48,
+  annualLimit: { plena: 250, outros: 150, confirm:true },  // mapeamento regime->limiar
+  // tabela base (Art.4º/3) — percentagem do vencimento base mensal, por bloco de 48h
+  baseTable: [
+    {n:1,  pct:45.0},
+    {n:2,  pct:47.5},
+    {n:3,  pct:50.0},
+    {n:4,  pct:52.5, original:42.5, confirm:true}, // ver nota acima
+    {n:5,  pct:56.0},
+    {n:6,  pct:59.5},
+    {n:7,  pct:63.0},
+    {n:8,  pct:68.0},
+    {n:9,  pct:75.5},
+    {n:10, pct:85.5}  // "10.º bloco e seguintes" — blocos >10 usam este valor
+  ],
+  // tabela majorada (Art.5º) — aplica-se quando confirmada a condição de fim de semana
+  // E o médico se disponibiliza para um novo bloco (confirmação manual)
+  majTable: [
+    {n:1,  pct:54.0},
+    {n:2,  pct:57.0},
+    {n:3,  pct:60.0},
+    {n:4,  pct:63.0},
+    {n:5,  pct:67.20},
+    {n:6,  pct:71.40},
+    {n:7,  pct:75.60},
+    {n:8,  pct:81.60},
+    {n:9,  pct:90.60},
+    {n:10, pct:102.60}
+  ],
+  weekendWindowWeeks: 8,     // janela deslizante (Art.5º/1)
+  weekendWindowHours: 48     // horas mínimas ao Sáb/Dom nessa janela
+};
+function dl119BlockPct(n, majorado){
+  const table = majorado ? DL119_RULES.majTable : DL119_RULES.baseTable;
+  const row = table[Math.min(n,10)-1] || table[table.length-1];
+  return row.pct;
+}
+function dl119AnnualLimit(regime){
+  return regime==='plena' ? DL119_RULES.annualLimit.plena : DL119_RULES.annualLimit.outros;
+}
 
 /* Multiplicadores de trabalho extraordinário (ER) sobre o €/hora — SIM p.2 /
    DL 62/79. [categoria][segmento]{first: 1ª hora, seg: horas seguintes}.
@@ -664,7 +774,7 @@ function computeMonth(entries, ctx){
     // na mesma semana continua a importar, entre si).
     const weekRegularTotal=days.reduce((s,e)=>s+((typeof e.regularHours==='number'&&e.regularHours>0)?e.regularHours:0),0);
     let contractRem=Math.max(0, weekTarget-weekRegularTotal);
-    let workedH=0, tnH=0, erH=0, weekEur=0;
+    let workedH=0, tnH=0, erH=0, weekEur=0, weekendBancoH=0;
     for(const e of days){
       const r=computeEntry(e, ctx, contractRem);
       contractRem=r.contractRemAfter;
@@ -674,6 +784,13 @@ function computeMonth(entries, ctx){
       // para uma avaliação íntegra do cálculo — independente do resumo mensal.
       const regHDay=(r.allocations.find(a=>a.key==='RW')||{hours:0}).hours;
       workedH+=regHDay+r.totalH; tnH+=r.tnH; erH+=(r.erDayH+r.erNightH); weekEur+=r.shiftEur;
+      // Horas de banco (ER) feitas ao Sábado/Domingo — usadas na condição do
+      // Art.5º do DL 119/2026 (independente de ser feriado: a lei fala só de
+      // sábado/domingo, por isso usa-se o dia da semana real, não `kind`).
+      if(e.er && r.totalH>0){
+        const dow=parseISO(e.date).getDay();
+        if(dow===0||dow===6) weekendBancoH+=r.totalH;
+      }
       if(e.inMonth===false) continue;   // fronteira: conta p/ contrato, não p/ resumo
       shifts.push(r); r.warnings.forEach(w=>warnings.push(w));
       r.allocations.forEach(a=>{ const row=ensure(a); row.hours+=a.hours; row.eur+=(a.eur||0); });
@@ -683,7 +800,8 @@ function computeMonth(entries, ctx){
     const deficitOut=Math.max(0, contractRem);
     weeklyStats.push({week:wk, monday:mondayOfWeek(days[0].date), sunday:sundayOfWeek(days[0].date),
       target:round2(weekTarget), deficitIn:round2(deficitIn), workedH:round2(workedH),
-      tnH:round2(tnH), erH:round2(erH), eur:round2(weekEur), deficitOut:round2(deficitOut)});
+      tnH:round2(tnH), erH:round2(erH), eur:round2(weekEur), deficitOut:round2(deficitOut),
+      weekendBancoH:round2(weekendBancoH)});
     carryDeficit=deficitOut;
   });
   Object.entries(weekTotals).forEach(([wk,h])=>{
@@ -693,7 +811,73 @@ function computeMonth(entries, ctx){
   const summary=Object.values(summaryMap).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   const erEur=round2(shifts.reduce((s,r)=>s+(r.erEur||0),0));
   const tnEur=round2(shifts.reduce((s,r)=>s+(r.tnEur||0),0));
-  return {summary, shifts, warnings, weeklyStats, erEur, tnEur, totalExtraEur:round2(erEur+tnEur)};
+  const totalErHours=round2(shifts.filter(s=>s.isER).reduce((s,r)=>s+r.erDayH+r.erNightH,0));
+  return {summary, shifts, warnings, weeklyStats, erEur, tnEur, totalExtraEur:round2(erEur+tnEur), totalErHours};
+}
+
+/* =========================================================================
+   DL 119/2026 — janela deslizante de 8 semanas (Art.5º) + cálculo de blocos
+   (Art.4º). Funções puras, chamadas só quando o toggle está ativo.
+   ========================================================================= */
+
+// Para cada semana em weeklyStats (já ordenadas cronologicamente por `week`),
+// soma weekendBancoH das ÚLTIMAS `windowWeeks` semanas (incl. a própria) e
+// marca se atinge o mínimo — janela deslizante, não blocos fixos.
+function dl119WeekendWindows(weeklyStats){
+  const sorted=weeklyStats.slice().sort((a,b)=>a.monday.localeCompare(b.monday));
+  return sorted.map((w,i)=>{
+    const start=Math.max(0,i-(DL119_RULES.weekendWindowWeeks-1));
+    const windowWeeks=sorted.slice(start,i+1);
+    const sum=round2(windowWeeks.reduce((s,x)=>s+(x.weekendBancoH||0),0));
+    return {week:w.week, monday:w.monday, sunday:w.sunday, windowStart:windowWeeks[0].monday,
+      windowSum:sum, qualifies:sum>=DL119_RULES.weekendWindowHours};
+  });
+}
+
+/* Calcula o incentivo DL119 a partir de um total de horas ER (anual real, ou
+   projeção mensal×12) e do contexto salarial. `majBlocks` = Set opcional com
+   os números de bloco confirmados manualmente como majorados (Art.5º/2-3). */
+function computeDL119(totalErHoursYear, ctx, majBlocks){
+  majBlocks = majBlocks || new Set();
+  const limit = dl119AnnualLimit(ctx.regime);
+  const excess = Math.max(0, round2(totalErHoursYear - limit));
+  const result = { limit, excess, applies:false, blocks:[], incentiveEur:0,
+    requalifiedHours:0, requalifiedEurAt1x:0, clawbackEur:0, netAdjustmentEur:0 };
+  if (excess < DL119_RULES.blockHours) return result;   // Art.4º/3 — só conta a partir do 1º bloco completo
+  result.applies = true;
+
+  const vencimentoBase = currentMonthlyBase();
+  const completedBlocks = Math.floor(excess / DL119_RULES.blockHours);
+  const remainder = round2(excess - completedBlocks*DL119_RULES.blockHours);
+
+  for (let n=1; n<=completedBlocks; n++){
+    const majorado = majBlocks.has(n);
+    const pct = dl119BlockPct(n, majorado);
+    const value = round2(pct/100 * vencimentoBase);
+    result.blocks.push({n, hours:DL119_RULES.blockHours, pct, majorado, value, partial:false});
+    result.incentiveEur += value;
+  }
+  if (remainder > 0){
+    const n = completedBlocks+1;
+    const majorado = majBlocks.has(n);
+    const pct = dl119BlockPct(n, majorado);
+    const value = round2((pct/100 * vencimentoBase / DL119_RULES.blockHours) * remainder);
+    result.blocks.push({n, hours:remainder, pct, majorado, value, partial:true});
+    result.incentiveEur += value;
+  }
+  result.incentiveEur = round2(result.incentiveEur);
+
+  // Requalificação (Art.4º/6): as horas dentro de blocos completos/parciais
+  // deixam de valer o multiplicador ER normal e passam a 1×R simples.
+  // Para "descontar" o valor que já tinham sido calculadas ao preço ER normal,
+  // usa-se o €/hora médio do ER do período (aproximação — a ferramenta não
+  // atribui os blocos a turnos concretos, só ao total anual).
+  result.requalifiedHours = round2(completedBlocks*DL119_RULES.blockHours + remainder);
+  result.requalifiedEurAt1x = round2(result.requalifiedHours * (ctx.hourly||0));
+  const avgErRate = (ctx.erEurTotal && ctx.erHoursTotal) ? (ctx.erEurTotal/ctx.erHoursTotal) : (ctx.hourly||0);
+  result.clawbackEur = round2(result.requalifiedHours * avgErRate);   // valor ER original (aprox.) a retirar
+  result.netAdjustmentEur = round2(result.requalifiedEurAt1x - result.clawbackEur + result.incentiveEur);
+  return result;
 }
 
 /* =========================================================================
@@ -952,7 +1136,7 @@ function structurePdf(frags){
 /* =========================================================================
    PARTE E — UI: estado + seletores + grelha
    ========================================================================= */
-let UI = { inputMode:'manual', manualRows:[], gridRows:[], lastResult:null, name:'' };
+let UI = { inputMode:'manual', manualRows:[], gridRows:[], lastResult:null, name:'', dl119MajBlocks:new Set() };
 let PDF_DATA=null;     // resultado de structurePdf()
 let PDF_LEGEND={};     // legenda lida do PDF (código -> {start,end,hours,worked})
 
@@ -1376,6 +1560,8 @@ function collectEntries(){
 /* =========================================================================
    PARTE F — CALCULAR + OUTPUTS
    ========================================================================= */
+function isDL119Enabled(){ const e=document.getElementById('chkDL119'); return !!(e&&e.checked); }
+
 function calculate(){
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
   if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (${UI.inputMode==='paste'?'importe o PDF ou preencha a grelha':'preencha o manual'}).</span>`; return; }
@@ -1384,6 +1570,18 @@ function calculate(){
   const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
   meta.innerHTML='';
   renderValidation(result.warnings); renderWeekly(result.weeklyStats); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
+
+  const dl119Card=document.getElementById('dl119Card');
+  if(isDL119Enabled()){
+    // Anual: usa o total real do ano. Mensal: projeção ×12 (claramente rotulada).
+    const isReal=isAnual();
+    const erHoursYear=isReal ? result.totalErHours : round2((result.totalErHours||0)*12);
+    const dctx={regime:ctx.regime, hourly:ctx.hourly, erEurTotal:result.erEur, erHoursTotal:result.totalErHours};
+    const dl119=computeDL119(erHoursYear, dctx, UI.dl119MajBlocks);
+    const windows=dl119WeekendWindows(result.weeklyStats);
+    renderDL119(dl119, windows, isReal, erHoursYear);
+    if(dl119Card) dl119Card.style.display='block';
+  } else if(dl119Card){ dl119Card.style.display='none'; }
 }
 function renderWeekly(weeklyStats){
   const card=document.getElementById('weeklyCard'); if(!card) return;
@@ -1487,6 +1685,43 @@ function renderAnnual(result){
     `<tr><td>Extra ER+TN ${anual?'(ano inserido)':'(projeção deste mês)'}</td>`+
     `<td class="num small">${anual?'soma real':eur(extra)+' × 12'}</td><td class="num">${eur(extraAnnual)}</td></tr>`;
   tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, ${anual?'dados inseridos':'estimativa'})</td><td class="num">${eur(total)}</td></tr>`;
+}
+
+function renderDL119(dl119, windows, isReal, erHoursYear){
+  const sum=document.getElementById('dl119Summary');
+  const label = isReal ? 'ano inserido' : `projeção anual (${erHoursYear.toFixed(1)}h = este mês × 12)`;
+  if(!dl119.applies){
+    sum.innerHTML=`<div class="alert ${isReal?'ok':'info'}">
+      Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
+      Excesso: <b>${dl119.excess.toFixed(1)} h</b> — ainda não atinge o 1º bloco completo (48h), não se aplica o incentivo.</div>`;
+    document.querySelector('#dl119BlocksTable tbody').innerHTML=`<tr><td colspan="5" class="muted">Sem blocos.</td></tr>`;
+    document.querySelector('#dl119BlocksTable tfoot').innerHTML='';
+    document.querySelector('#dl119WeeksTable tbody').innerHTML='';
+    return;
+  }
+  sum.innerHTML=`<div class="alert warn">
+    Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
+    Excesso: <b>${dl119.excess.toFixed(1)} h</b> · Horas requalificadas (1×€/h, sem multiplicador ER): <b>${dl119.requalifiedHours.toFixed(1)} h</b><br>
+    <span class="small">Ajuste líquido aproximado: ${eur(dl119.requalifiedEurAt1x)} (1×) − ${eur(dl119.clawbackEur)} (retira valor ER já calculado ao preço normal, aproximado pela média €/h ER do período) + ${eur(dl119.incentiveEur)} (incentivo DL119) = <b>${eur(dl119.netAdjustmentEur)}</b></span></div>`;
+
+  const tb=document.querySelector('#dl119BlocksTable tbody'), tf=document.querySelector('#dl119BlocksTable tfoot');
+  tb.innerHTML=dl119.blocks.map(b=>`<tr>
+    <td>${b.n}º${b.partial?' (parcial)':''}</td>
+    <td class="num">${b.hours.toFixed(2)}</td>
+    <td class="num">${b.pct.toFixed(2)}%</td>
+    <td class="center"><input type="checkbox" data-blockn="${b.n}" ${b.majorado?'checked':''} onchange="toggleDL119Block(${b.n})"></td>
+    <td class="num">${eur(b.value)}</td></tr>`).join('');
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="4">TOTAL INCENTIVO DL119</td><td class="num">${eur(dl119.incentiveEur)}</td></tr>`;
+
+  const wtb=document.querySelector('#dl119WeeksTable tbody');
+  wtb.innerHTML=windows.map(w=>`<tr class="${w.qualifies?'':'muted'}">
+    <td>${formatPT(w.monday)}–${formatPT(w.sunday)}</td>
+    <td class="num">${w.windowSum.toFixed(2)} h</td>
+    <td>${w.qualifies?'<span class="badge code">cumpre (≥48h)</span>':'—'}</td></tr>`).join('');
+}
+function toggleDL119Block(n){
+  if(UI.dl119MajBlocks.has(n)) UI.dl119MajBlocks.delete(n); else UI.dl119MajBlocks.add(n);
+  calculate();
 }
 
 /* =========================================================================
