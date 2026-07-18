@@ -164,7 +164,7 @@
     </div>
     <div class="row" style="margin-top:10px">
       <label>Défice de horas inicial <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">Horas em falta transitadas de antes do período em análise — somam-se ao contrato da 1ª semana.</span></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">Horas em falta transitadas até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span></label>
     </div>
     <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
       <label class="inline"><input type="checkbox" id="chkDL119" onchange="calculate()"/>
@@ -172,8 +172,8 @@
       <span class="badge confirm">opcional · vários pontos por confirmar</span>
     </div>
     <div class="row" id="dl119PriorRow" style="margin-top:10px;display:none">
-      <label>Horas E já realizadas antes deste período <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">O DL119 conta o total ANUAL de horas ER. Se o período aqui inserido não cobrir o ano todo, indique aqui as horas ER já feitas antes (outros meses não inseridos), para o limite (250h/150h) ser avaliado corretamente.</span></label>
+      <label>Horas E já realizadas até final de <span id="priorMonthLabel2">—</span> <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">O DL119 conta o total ANUAL de horas ER. Se o período aqui inserido não cobrir o ano todo, indique aqui as horas ER já feitas até final do mês anterior ao mês inicial (ponto 2), para o limite (250h/150h) ser avaliado corretamente.</span></label>
     </div>
   </div>
 
@@ -181,11 +181,14 @@
   <div class="card">
     <h2>2 · Período</h2>
     <div class="row">
+      <label>Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
+      <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
       <label>Número de meses <select id="selNumMeses" onchange="onNumMesesChange()"></select></label>
       <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
-      <label class="inline" style="margin-bottom:6px"><span class="small" id="periodHint"></span></label>
     </div>
-    <div class="row" id="mesesPickerArea" style="margin-top:10px"></div>
+    <p class="small">Os meses são sempre <b>seguidos</b> a partir do mês inicial — é isso que permite aos valores
+      "prévios" (ponto 1) fazerem sentido: aplicam-se sempre ao estado no <b>último dia do mês imediatamente
+      anterior</b> ao mês inicial. <span id="periodHint"></span></p>
   </div>
 
   <!-- 3 · entrada -->
@@ -1176,18 +1179,31 @@ function bolsaHours(){return parseFloat(document.getElementById('selBolsaH').val
 // Défice de horas já existente ANTES do período em análise (soma-se ao
 // contrato da 1ª semana processada; ver PARTE C).
 function initialDeficitHours(){const e=document.getElementById('inpInitialDeficit');const v=e?parseFloat(e.value):0;return v>0?v:0;}
-/* Período = lista de {y,m} escolhidos pelo utilizador (não tem de ser
-   contíguo). UI.periodMonths é a fonte da verdade; #selNumMeses só define
-   quantas linhas de escolha (Mês/Ano) aparecem. */
+/* Período = "número de meses" SEGUIDOS a contar do "mês inicial". Tem de ser
+   sempre contíguo — é isso que dá sentido aos valores "prévios" do ponto 1
+   (défice inicial / horas E do DL119): aplicam-se sempre ao estado no
+   ÚLTIMO DIA DO MÊS ANTERIOR ao mês inicial, o que só é uma âncora coerente
+   quando não há saltos entre os meses escolhidos. */
 function numMeses(){const e=document.getElementById('selNumMeses');const v=e?parseInt(e.value,10):1;return v>0?v:1;}
 function isSingleMonth(){return numMeses()===1;}
+function startMonth(){
+  const sm=document.getElementById('selStartMonth'), sy=document.getElementById('selStartYear');
+  const m=sm?parseInt(sm.value,10):(new Date().getMonth()+1);
+  const y=sy?parseInt(sy.value,10):new Date().getFullYear();
+  return {y:(y||new Date().getFullYear()), m:(m||1)};
+}
 function selectedMonths(){
-  // ordenados cronologicamente e sem duplicados (caso o utilizador repita o mesmo mês em 2 linhas)
-  const seen=new Set(); const out=[];
-  (UI.periodMonths||[]).forEach(pm=>{ const k=pm.y+'-'+pm.m; if(!seen.has(k)){seen.add(k); out.push(pm);} });
-  out.sort((a,b)=> a.y!==b.y ? a.y-b.y : a.m-b.m);
+  const {y,m}=startMonth(); const n=numMeses();
+  const out=[]; let cy=y, cm=m;
+  for(let i=0;i<n;i++){ out.push({y:cy,m:cm}); cm++; if(cm>12){cm=1;cy++;} }
   return out;
 }
+// mês imediatamente anterior ao mês inicial — âncora dos valores "prévios".
+function priorAnchorMonth(){
+  const {y,m}=startMonth(); let py=y, pm=m-1; if(pm<1){pm=12;py--;}
+  return {y:py,m:pm};
+}
+function priorAnchorLabel(){ const {y,m}=priorAnchorMonth(); return `${MONTHS_PT[m-1]} de ${y}`; }
 
 /* Tipos de trabalho normal (consomem o contrato semanal, pagos pela base). */
 const WORK_TYPES = {
@@ -1205,12 +1221,17 @@ const BANCO_TYPES = {
 };
 function workHoursOf(key){ const w=WORK_TYPES[key]; return w?w.hours():0; }
 
+const MONTHS_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
 function initSelectors(){
+  const sm=document.getElementById('selStartMonth');
+  sm.innerHTML=MONTHS_PT.map((mn,i)=>`<option value="${i+1}">${mn}</option>`).join('');
+  const now=new Date();
+  sm.value=now.getMonth()+1;
+  document.getElementById('selStartYear').value=now.getFullYear();
   const sn=document.getElementById('selNumMeses');
   let numOpts=''; for(let n=1;n<=12;n++) numOpts+=`<option value="${n}" ${n===1?'selected':''}>${n}</option>`;
   sn.innerHTML=numOpts;
-  const now=new Date();
-  UI.periodMonths=[{y:now.getFullYear(), m:now.getMonth()+1}];
   const sb=document.getElementById('selWeeklyBase');
   sb.innerHTML=[40,42].map(h=>`<option value="${h}" ${h===40?'selected':''}>${h} h/semana</option>`).join('');
   let red=''; for(let r=0;r<=7;r++)red+=`<option value="${r}">${r===0?'sem redução':('−'+r+' h')}</option>`;
@@ -1227,50 +1248,26 @@ function initSelectors(){
   sb.addEventListener('change',updateWeeklyHint); sr.addEventListener('change',updateWeeklyHint);
   ['selRotinaH','selTardeH','selExtraH','selBolsaH'].forEach(id=>
     document.getElementById(id).addEventListener('change',()=>{ if(UI.inputMode==='manual') renderManualCalendar(); }));
-  updateWeeklyHint(); renderMesesPicker();
+  updateWeeklyHint(); updatePeriodAvailability();
 }
-const MONTHS_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function onStartMonthChange(){ updatePeriodAvailability(); buildCalendar(); }
+function onNumMesesChange(){ updatePeriodAvailability(); buildCalendar(); }
 
-/* Desenha N linhas de (Mês, Ano) — uma por mês escolhido. Mantém as escolhas
-   já feitas ao aumentar/diminuir N; novas linhas usam o mês seguinte ao da
-   última linha existente como sugestão. */
-function renderMesesPicker(){
-  const n=numMeses();
-  const cur=UI.periodMonths||[];
-  while(cur.length<n){
-    const last=cur[cur.length-1] || {y:+ (new Date().getFullYear()), m:new Date().getMonth()+1};
-    let {y,m}=last; m++; if(m>12){m=1;y++;}
-    cur.push({y,m});
-  }
-  cur.length=n;
-  UI.periodMonths=cur;
-  const area=document.getElementById('mesesPickerArea');
-  area.innerHTML=cur.map((pm,i)=>`
-    <label>Mês ${i+1}
-      <select data-i="${i}" data-f="m">${MONTHS_PT.map((mn,mi)=>`<option value="${mi+1}" ${pm.m===mi+1?'selected':''}>${mn}</option>`).join('')}</select>
-    </label>
-    <label style="width:80px">Ano <input type="number" data-i="${i}" data-f="y" min="2000" max="2100" step="1" value="${pm.y}"></label>
-  `).join('');
-  area.querySelectorAll('select,input').forEach(el=>el.addEventListener('change',e=>{
-    const i=+e.target.dataset.i, f=e.target.dataset.f;
-    UI.periodMonths[i][f]= f==='y' ? (+e.target.value||UI.periodMonths[i].y) : +e.target.value;
-    updatePeriodAvailability(); buildCalendar();
-  }));
-  updatePeriodAvailability();
-}
-function onNumMesesChange(){ renderMesesPicker(); buildCalendar(); }
-
-// PDF só faz sentido quando há exatamente 1 mês escolhido; atualiza hint + disable do separador.
+// Atualiza a etiqueta do "mês âncora" (ponto 1), o hint do período, e a
+// disponibilidade do PDF (só faz sentido com exatamente 1 mês escolhido).
 function updatePeriodAvailability(){
   const single=isSingleMonth();
   const tp=document.getElementById('tabPaste');
   if(tp){ tp.disabled=!single; tp.style.opacity=single?1:0.4; tp.style.cursor=single?'pointer':'not-allowed';
     if(!single && UI.inputMode==='paste') switchInputTab('manual'); }
+  const anchor=priorAnchorLabel();
+  const l1=document.getElementById('priorMonthLabel1'); if(l1) l1.textContent=anchor;
+  const l2=document.getElementById('priorMonthLabel2'); if(l2) l2.textContent=anchor;
   const el=document.getElementById('periodHint'); if(!el) return;
   const n=numMeses();
   el.textContent = single
     ? `1 mês + dias das semanas de fronteira nas duas pontas.`
-    : `${n} meses (não têm de ser seguidos) + dias de fronteira em cada um. PDF só disponível com 1 mês.`;
+    : `${n} meses seguidos + dias de fronteira nas duas pontas. PDF só disponível com 1 mês.`;
 }
 function updateWeeklyHint(){
   const base=weeklyBase(), red=weeklyReduction(), eff=currentWeekly();
@@ -1355,10 +1352,11 @@ function applyPdfEmployee(){
 // Constrói a grelha a partir de um funcionário do PDF (Rotina/Urgência/Prevenção).
 function buildGridFromPdf(emp){
   const y=PDF_DATA.year, m=PDF_DATA.month;
-  // PDF é sempre 1 mês -> força número de meses = 1 e sincroniza o seletor.
+  // PDF é sempre 1 mês -> sincroniza o mês inicial e força número de meses = 1.
+  document.getElementById('selStartMonth').value=m;
+  document.getElementById('selStartYear').value=y;
   document.getElementById('selNumMeses').value='1';
-  UI.periodMonths=[{y,m}];
-  renderMesesPicker();
+  updatePeriodAvailability();
   updateWeeklyHint();
   UI.name=emp.name; UI.inputMode='paste';
   const {dates,monthFirst,monthLast}=extendedDates(y,m);
@@ -1404,13 +1402,12 @@ function buildGridFromPdf(emp){
 }
 
 /* ---- MANUAL ---- */
-/* Constrói as linhas manuais a partir de UI.periodMonths (1..N meses, não têm
-   de ser seguidos). Para CADA mês escolhido, alarga aos dias das semanas
-   (Seg–Dom) de fronteira nas duas pontas — tal como acontecia no modo mensal
-   — para que todas as semanas processadas pelo motor fiquem visíveis. Meses
-   consecutivos partilham naturalmente a semana de fronteira entre eles (sem
-   duplicar linhas); meses não consecutivos deixam um intervalo em branco no
-   meio, que não é criado. */
+/* Constrói as linhas manuais a partir de selectedMonths() — sempre N meses
+   SEGUIDOS a contar do mês inicial (ver PARTE E). Para CADA mês, alarga aos
+   dias das semanas (Seg–Dom) de fronteira nas duas pontas, para que todas as
+   semanas processadas pelo motor fiquem visíveis; meses consecutivos
+   partilham naturalmente a semana de fronteira entre eles (sem duplicar
+   linhas). */
 function buildCalendar(){
   const months=selectedMonths();
   UI.manualRows=[]; UI.rowByDate={}; UI.periodRanges=[];
