@@ -166,12 +166,6 @@
       <label>Bolsa Horas (h/dia) <select id="selBolsaH"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small">Folga = 8 h fixas. Horas usadas na inserção manual.</span></label>
     </div>
-    <div class="row" style="margin-top:10px">
-      <label>€/hora ER (base dos multiplicadores)
-        <input type="number" id="inpErHourly" step="0.01" min="0" style="width:110px" onchange="updateWeeklyHint()"/>
-      </label>
-      <label class="inline" style="margin-bottom:6px"><span class="small" id="erHourlyHint"></span></label>
-    </div>
   </div>
 
   <!-- 2 · período -->
@@ -416,12 +410,10 @@ const ER_MULTIPLIER = {
    = 50% do €/hora normal (20,42) = 0,625 × €/hora ER (16,333). */
 const TN_UPLIFT = { pct:0.625, confirm:false };
 
-/* Valor/hora base do trabalho EXTRAORDINÁRIO (ER). VALIDADO com o recibo de
-   maio (Assistente geral): R = vencimento_base × 12 / 2600 = 3538,87×12/2600 =
-   16,333 €/h. Os multiplicadores SIM (×1,25…×2,5) aplicam-se sobre este valor.
-   NB: difere da "valor/hora" normal (÷2080). Divisor 2600 confirmado só para
-   Assistente geral — confirmar para outras categorias/regimes. */
-const ER_HOURLY_DIVISOR = { value:2600, confirm:true };
+/* O €/hora base do trabalho EXTRAORDINÁRIO (ER) é o valor/hora da tabela SIM
+   correspondente à posição/regime (ver SALARY_TABLE). Os multiplicadores SIM
+   (×1,25…×2,5) aplicam-se sobre este valor.
+   (O 16,33 do recibo de maio era um erro pontual desse recibo.) */
 
 /* =========================================================================
    PARTE B — UTILITÁRIOS DE DATA / FERIADOS  (REUTILIZADO do scheduler)
@@ -914,20 +906,10 @@ function currentSalary(){
   const cat=SALARY_TABLE[currentCategory()]; if(!cat) return {m:0,h:0};
   return cat.regimes[currentRegime()] || cat.regimes[Object.keys(cat.regimes)[0]] || {m:0,h:0};
 }
-function currentHourly(){return currentSalary().h||0;} // €/hora "normal" da tabela SIM (÷2080)
+function currentHourly(){return currentSalary().h||0;} // valor/hora da tabela SIM p/ posição/regime
 function currentMonthlyBase(){return currentSalary().m||0;}
-/* €/hora do trabalho extraordinário (ER) — base dos multiplicadores SIM.
-   ATENÇÃO: não é o valor/hora normal da tabela (÷2080). No recibo de maio do
-   Assistente geral (base 3.538,36) o ER saiu a 16,33 €/h (= 0,8 × 20,41).
-   A tabela SIM tem uma secção "Portaria 410/2005 — VALORES CONGELADOS", pelo
-   que este valor provavelmente NÃO deriva do vencimento atual. Por isso é um
-   campo EDITÁVEL: o utilizador confirma-o no recibo. O default é só um palpite. */
-function erHourlyDefault(){return round2(currentMonthlyBase()*12/ER_HOURLY_DIVISOR.value);}
-function erHourly(){
-  const inp=document.getElementById('inpErHourly');
-  const v=inp?parseFloat(inp.value):NaN;
-  return (v>0)?v:erHourlyDefault();
-}
+// €/hora base do trabalho extraordinário (ER) = valor/hora da tabela (posição/regime).
+function erHourly(){return currentHourly();}
 function eur(n){return (Math.round((n+Number.EPSILON)*100)/100).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
 
 // Preenche o seletor de regime conforme a categoria (IFE só tem "geral").
@@ -937,12 +919,7 @@ function fillRegimeOptions(){
   sr.innerHTML=keys.map(k=>`<option value="${k}" ${k==='exclusiva'?'selected':''}>${REGIME_LABELS[k]||k}</option>`).join('');
   if(!keys.includes(sr.value)) sr.value=keys[0];
 }
-function onCategoryChange(){
-  fillRegimeOptions();
-  const inp=document.getElementById('inpErHourly');
-  if(inp) inp.value=erHourlyDefault().toFixed(2);   // repõe o palpite ao mudar de categoria
-  updateWeeklyHint();
-}
+function onCategoryChange(){ fillRegimeOptions(); updateWeeklyHint(); }
 
 /* Tipos de trabalho normal (horas definidas no ponto 1) e período. */
 function rotinaHours(){return parseFloat(document.getElementById('selRotinaH').value)||0;}
@@ -986,7 +963,6 @@ function initSelectors(){
   document.getElementById('selTardeH').innerHTML=mk(4,8,6);
   document.getElementById('selExtraH').innerHTML=mk(1,10,4);
   document.getElementById('selBolsaH').innerHTML=mk(1,10,4);
-  document.getElementById('inpErHourly').value=erHourlyDefault().toFixed(2);
   sb.addEventListener('change',updateWeeklyHint); sr.addEventListener('change',updateWeeklyHint);
   ['selRotinaH','selTardeH','selExtraH','selBolsaH'].forEach(id=>
     document.getElementById(id).addEventListener('change',()=>{ if(UI.inputMode==='manual') renderManualCalendar(); }));
@@ -1013,9 +989,7 @@ function updateWeeklyHint(){
   if(wh) wh.textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
   document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h (Seg–Dom) · base diária ${dailyContractHours()} h`;
   const sh=document.getElementById('salaryHint');
-  if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/h normal (tabela) ${eur(currentHourly())}`;
-  const eh=document.getElementById('erHourlyHint');
-  if(eh) eh.innerHTML=`Confirme no recibo: 700.004 ÷ horas ÷ 2. <span class="badge confirm">confirmar</span>`;
+  if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/hora ${eur(currentHourly())} (base dos multiplicadores ER)`;
 }
 
 function renderConfirmBanner(){
