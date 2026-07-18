@@ -321,8 +321,9 @@ const PAYROLL_RULES = {
   // Janela de Trabalho Noturno (TN) para médicos: 20:00–08:00 (Tabela SIM /
   // "para médicos sindicalizados"). Diurno = 08:00–20:00 (inclui Sáb 08:00–13:00).
   nightWindow: { startHour: 20, endHour: 8, confirm:false },
-  // Sábado: a partir desta hora conta como DDC (descanso complementar); antes conta como dia útil. SUPOSIÇÃO.
-  saturdaySplitHour: { hour: 13, confirm:true },
+  // Sábado: a partir desta hora conta como DDC (descanso complementar); antes conta como dia útil.
+  // CONFIRMADO: tabela SIM p.2 — "Trabalho diurno aos sábados depois das 13:00h, domingos, feriados…".
+  saturdaySplitHour: { hour: 13, confirm:false },
   // "1ª hora": duração (min) que bilha sob o código "1ª"; o resto do turno bilha sob "seguintes".
   firstHourMinutes: { minutes: 60, confirm:false },
   limits: { maxDailyHours:24, maxWeeklyHours:48, confirm:true },
@@ -357,7 +358,9 @@ const PAYROLL_RULES = {
     ER_FER_NOT_1: {code:'?', desc:'ER · feriado · noturno · 1ª hora',              isER:true, isTN:false, confirm:true, missing:true},
     ER_FER_NOT_S: {code:'?', desc:'ER · feriado · noturno · seguintes',            isER:true, isTN:false, confirm:true, missing:true},
     // --- TN (acréscimo noturno) ---
-    TN_DU:  {code:'211.001', desc:'TN · dia útil · noturno',     isER:false, isTN:true, confirm:true,  missing:false}, // OE? confirmar
+    // CONFIRMADO (recibo de maio): código e horas batem certo. "OE" no rótulo do recibo
+    // (DUNotOEHosp) fica por esclarecer, mas é só terminologia — não afeta o cálculo.
+    TN_DU:  {code:'211.001', desc:'TN · dia útil · noturno',     isER:false, isTN:true, confirm:false, missing:false},
     TN_SAB: {code:'?',       desc:'TN · Sábado · noturno',       isER:false, isTN:true, confirm:true,  missing:true},
     TN_DOM: {code:'?',       desc:'TN · Domingo · noturno',      isER:false, isTN:true, confirm:true,  missing:true},
     TN_FER: {code:'?',       desc:'TN · feriado · noturno',      isER:false, isTN:true, confirm:true,  missing:true},
