@@ -171,21 +171,21 @@
         <span>Incentivo excecional <b>DL 119/2026</b> (horas ER além do limite legal anual)</span></label>
       <span class="badge confirm">opcional · vários pontos por confirmar</span>
     </div>
+    <div class="row" id="dl119PriorRow" style="margin-top:10px;display:none">
+      <label>Horas E já realizadas antes deste período <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">O DL119 conta o total ANUAL de horas ER. Se o período aqui inserido não cobrir o ano todo, indique aqui as horas ER já feitas antes (outros meses não inseridos), para o limite (250h/150h) ser avaliado corretamente.</span></label>
+    </div>
   </div>
 
   <!-- 2 · período -->
   <div class="card">
     <h2>2 · Período</h2>
     <div class="row">
-      <label>Tipo <select id="selPeriodType" onchange="onPeriodTypeChange()">
-        <option value="mensal" selected>Mensal</option>
-        <option value="anual">Anual</option>
-      </select></label>
-      <label id="lblMonth">Mês <select id="selMonth"></select></label>
-      <label>Ano <input type="number" id="selYear" min="2000" max="2100" step="1" style="width:100px"/></label>
+      <label>Número de meses <select id="selNumMeses" onchange="onNumMesesChange()"></select></label>
       <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
       <label class="inline" style="margin-bottom:6px"><span class="small" id="periodHint"></span></label>
     </div>
+    <div class="row" id="mesesPickerArea" style="margin-top:10px"></div>
   </div>
 
   <!-- 3 · entrada -->
@@ -298,9 +298,9 @@
   <!-- OUTPUT 3 · ANUAL -->
   <div id="annualCard" class="card" style="display:none">
     <h2>Output 3 · Estimativa anual de rendimento</h2>
-    <p class="small">Estimativa (v1): <b>14×</b> vencimento base (12 meses + subsídios de férias e Natal)
-      mais o extra ER+TN deste mês projetado a <b>×12</b>. Numa próxima versão poderá introduzir os
-      turnos ER de cada mês do ano para um valor exato.</p>
+    <p class="small"><b>14×</b> vencimento base (12 meses + subsídios de férias e Natal) mais o extra ER+TN.
+      Se os 12 meses do ano estiverem inseridos (ponto 2), usa a soma real; com menos meses, extrapola
+      (×12/nº de meses), claramente assinalado como estimativa.</p>
     <div style="overflow-x:auto">
       <table id="annualTable">
         <thead><tr><th>Componente</th><th class="num">Cálculo</th><th class="num">Valor anual (€)</th></tr></thead>
@@ -1176,8 +1176,18 @@ function bolsaHours(){return parseFloat(document.getElementById('selBolsaH').val
 // Défice de horas já existente ANTES do período em análise (soma-se ao
 // contrato da 1ª semana processada; ver PARTE C).
 function initialDeficitHours(){const e=document.getElementById('inpInitialDeficit');const v=e?parseFloat(e.value):0;return v>0?v:0;}
-function periodType(){const e=document.getElementById('selPeriodType');return e?e.value:'mensal';}
-function isAnual(){return periodType()==='anual';}
+/* Período = lista de {y,m} escolhidos pelo utilizador (não tem de ser
+   contíguo). UI.periodMonths é a fonte da verdade; #selNumMeses só define
+   quantas linhas de escolha (Mês/Ano) aparecem. */
+function numMeses(){const e=document.getElementById('selNumMeses');const v=e?parseInt(e.value,10):1;return v>0?v:1;}
+function isSingleMonth(){return numMeses()===1;}
+function selectedMonths(){
+  // ordenados cronologicamente e sem duplicados (caso o utilizador repita o mesmo mês em 2 linhas)
+  const seen=new Set(); const out=[];
+  (UI.periodMonths||[]).forEach(pm=>{ const k=pm.y+'-'+pm.m; if(!seen.has(k)){seen.add(k); out.push(pm);} });
+  out.sort((a,b)=> a.y!==b.y ? a.y-b.y : a.m-b.m);
+  return out;
+}
 
 /* Tipos de trabalho normal (consomem o contrato semanal, pagos pela base). */
 const WORK_TYPES = {
@@ -1196,10 +1206,11 @@ const BANCO_TYPES = {
 function workHoursOf(key){ const w=WORK_TYPES[key]; return w?w.hours():0; }
 
 function initSelectors(){
-  const months=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const sm=document.getElementById('selMonth');
-  sm.innerHTML=months.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
-  const now=new Date(); sm.value=now.getMonth()+1; document.getElementById('selYear').value=now.getFullYear();
+  const sn=document.getElementById('selNumMeses');
+  let numOpts=''; for(let n=1;n<=12;n++) numOpts+=`<option value="${n}" ${n===1?'selected':''}>${n}</option>`;
+  sn.innerHTML=numOpts;
+  const now=new Date();
+  UI.periodMonths=[{y:now.getFullYear(), m:now.getMonth()+1}];
   const sb=document.getElementById('selWeeklyBase');
   sb.innerHTML=[40,42].map(h=>`<option value="${h}" ${h===40?'selected':''}>${h} h/semana</option>`).join('');
   let red=''; for(let r=0;r<=7;r++)red+=`<option value="${r}">${r===0?'sem redução':('−'+r+' h')}</option>`;
@@ -1216,22 +1227,50 @@ function initSelectors(){
   sb.addEventListener('change',updateWeeklyHint); sr.addEventListener('change',updateWeeklyHint);
   ['selRotinaH','selTardeH','selExtraH','selBolsaH'].forEach(id=>
     document.getElementById(id).addEventListener('change',()=>{ if(UI.inputMode==='manual') renderManualCalendar(); }));
-  updateWeeklyHint(); updatePeriodHint();
+  updateWeeklyHint(); renderMesesPicker();
 }
-function updatePeriodHint(){
-  const el=document.getElementById('periodHint'); if(!el) return;
-  el.textContent=isAnual()
-    ? `Ano completo (Jan–Dez). O PDF só está disponível em modo mensal.`
-    : `Mês + dias do mês anterior que pertencem à semana do dia 1.`;
+const MONTHS_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+/* Desenha N linhas de (Mês, Ano) — uma por mês escolhido. Mantém as escolhas
+   já feitas ao aumentar/diminuir N; novas linhas usam o mês seguinte ao da
+   última linha existente como sugestão. */
+function renderMesesPicker(){
+  const n=numMeses();
+  const cur=UI.periodMonths||[];
+  while(cur.length<n){
+    const last=cur[cur.length-1] || {y:+ (new Date().getFullYear()), m:new Date().getMonth()+1};
+    let {y,m}=last; m++; if(m>12){m=1;y++;}
+    cur.push({y,m});
+  }
+  cur.length=n;
+  UI.periodMonths=cur;
+  const area=document.getElementById('mesesPickerArea');
+  area.innerHTML=cur.map((pm,i)=>`
+    <label>Mês ${i+1}
+      <select data-i="${i}" data-f="m">${MONTHS_PT.map((mn,mi)=>`<option value="${mi+1}" ${pm.m===mi+1?'selected':''}>${mn}</option>`).join('')}</select>
+    </label>
+    <label style="width:80px">Ano <input type="number" data-i="${i}" data-f="y" min="2000" max="2100" step="1" value="${pm.y}"></label>
+  `).join('');
+  area.querySelectorAll('select,input').forEach(el=>el.addEventListener('change',e=>{
+    const i=+e.target.dataset.i, f=e.target.dataset.f;
+    UI.periodMonths[i][f]= f==='y' ? (+e.target.value||UI.periodMonths[i].y) : +e.target.value;
+    updatePeriodAvailability(); buildCalendar();
+  }));
+  updatePeriodAvailability();
 }
-function onPeriodTypeChange(){
-  const anual=isAnual();
-  document.getElementById('lblMonth').style.display=anual?'none':'';
-  // PDF só faz sentido no modo mensal
+function onNumMesesChange(){ renderMesesPicker(); buildCalendar(); }
+
+// PDF só faz sentido quando há exatamente 1 mês escolhido; atualiza hint + disable do separador.
+function updatePeriodAvailability(){
+  const single=isSingleMonth();
   const tp=document.getElementById('tabPaste');
-  tp.disabled=anual; tp.style.opacity=anual?0.4:1; tp.style.cursor=anual?'not-allowed':'pointer';
-  if(anual) switchInputTab('manual');
-  updatePeriodHint(); buildCalendar();
+  if(tp){ tp.disabled=!single; tp.style.opacity=single?1:0.4; tp.style.cursor=single?'pointer':'not-allowed';
+    if(!single && UI.inputMode==='paste') switchInputTab('manual'); }
+  const el=document.getElementById('periodHint'); if(!el) return;
+  const n=numMeses();
+  el.textContent = single
+    ? `1 mês + dias das semanas de fronteira nas duas pontas.`
+    : `${n} meses (não têm de ser seguidos) + dias de fronteira em cada um. PDF só disponível com 1 mês.`;
 }
 function updateWeeklyHint(){
   const base=weeklyBase(), red=weeklyReduction(), eff=currentWeekly();
@@ -1316,8 +1355,10 @@ function applyPdfEmployee(){
 // Constrói a grelha a partir de um funcionário do PDF (Rotina/Urgência/Prevenção).
 function buildGridFromPdf(emp){
   const y=PDF_DATA.year, m=PDF_DATA.month;
-  document.getElementById('selYear').value=y;
-  document.getElementById('selMonth').value=m;
+  // PDF é sempre 1 mês -> força número de meses = 1 e sincroniza o seletor.
+  document.getElementById('selNumMeses').value='1';
+  UI.periodMonths=[{y,m}];
+  renderMesesPicker();
   updateWeeklyHint();
   UI.name=emp.name; UI.inputMode='paste';
   const {dates,monthFirst,monthLast}=extendedDates(y,m);
@@ -1363,71 +1404,81 @@ function buildGridFromPdf(emp){
 }
 
 /* ---- MANUAL ---- */
-/* Constrói as linhas manuais. Mensal: mês + os dias do mês ANTERIOR/SEGUINTE
-   que ainda pertencem à semana (Seg–Dom) que contém o 1.º/último dia. Anual:
-   ano completo (Jan–Dez), com o mesmo alargamento nas duas pontas. Isto
-   garante que TODAS as semanas processadas pelo motor ficam visíveis. */
+/* Constrói as linhas manuais a partir de UI.periodMonths (1..N meses, não têm
+   de ser seguidos). Para CADA mês escolhido, alarga aos dias das semanas
+   (Seg–Dom) de fronteira nas duas pontas — tal como acontecia no modo mensal
+   — para que todas as semanas processadas pelo motor fiquem visíveis. Meses
+   consecutivos partilham naturalmente a semana de fronteira entre eles (sem
+   duplicar linhas); meses não consecutivos deixam um intervalo em branco no
+   meio, que não é criado. */
 function buildCalendar(){
-  const y=+document.getElementById('selYear').value;
-  const m=+document.getElementById('selMonth').value;
-  const anual=isAnual();
-  const firstISO = anual ? `${y}-01-01` : `${y}-${String(m).padStart(2,'0')}-01`;
-  const lastISO  = anual ? `${y}-12-31`
-                         : `${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`;
-  const renderStart=mondayOfWeek(firstISO);     // inclui dias do período ANTERIOR da mesma semana
-  const renderEnd=sundayOfWeek(lastISO);        // inclui dias do período SEGUINTE da mesma semana
-  UI.manualRows=[]; UI.rowByDate={};
-  let d=parseISO(renderStart), end=parseISO(renderEnd);
-  while(d<=end){
-    const date=iso(d);
-    // pré-preenche dias úteis (não feriados) com Rotina
-    const work=(dayKind(date)==='weekday')?'rotina':'';
-    const row={date, inMonth:(date>=firstISO && date<=lastISO), work, banco:''};
-    UI.manualRows.push(row); UI.rowByDate[date]=row;
-    d=addDays(d,1);
-  }
-  UI.calFirst=firstISO; UI.calLast=lastISO;
-  UI.calRenderStart=renderStart; UI.calRenderEnd=renderEnd;
+  const months=selectedMonths();
+  UI.manualRows=[]; UI.rowByDate={}; UI.periodRanges=[];
+  if(!months.length){ renderManualCalendar(); updateWeeklyHint(); return; }
+  months.forEach(({y,m})=>{
+    const firstISO=`${y}-${String(m).padStart(2,'0')}-01`;
+    const lastISO=`${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`;
+    UI.periodRanges.push({y,m,firstISO,lastISO});
+    const renderStart=mondayOfWeek(firstISO);   // inclui dias do mês ANTERIOR da mesma semana
+    const renderEnd=sundayOfWeek(lastISO);      // inclui dias do mês SEGUINTE da mesma semana
+    let d=parseISO(renderStart); const end=parseISO(renderEnd);
+    while(d<=end){
+      const date=iso(d);
+      const inThis=(date>=firstISO && date<=lastISO);
+      let row=UI.rowByDate[date];
+      if(!row){
+        // pré-preenche dias úteis (não feriados) com Rotina
+        const work=(dayKind(date)==='weekday')?'rotina':'';
+        row={date, inMonth:inThis, work, banco:''};
+        UI.manualRows.push(row); UI.rowByDate[date]=row;
+      } else if(inThis){
+        row.inMonth=true;   // semana partilhada entre 2 meses escolhidos: garante o inMonth correto
+      }
+      d=addDays(d,1);
+    }
+  });
+  UI.manualRows.sort((a,b)=>a.date.localeCompare(b.date));
+  UI.calFirst=UI.periodRanges[0].firstISO; UI.calLast=UI.periodRanges[UI.periodRanges.length-1].lastISO;
   renderManualCalendar(); updateWeeklyHint();
 }
 
-/* Calendário: um bloco por mês do período (mensal = 1 bloco; anual = 12).
-   Cada dia tem 2 listas: trabalho normal + banco. Os dias de semanas de
-   fronteira que NÃO pertencem a nenhum bloco do período (antes do 1.º dia ou
-   depois do último) ficam editáveis no bloco mais próximo (1.º/último), para
-   que a semana completa seja sempre visível. Dentro do período, cada dia
-   pertence sempre a um único bloco (o seu próprio mês), evitando duplicação. */
+/* Calendário: um bloco por mês ESCOLHIDO (UI.periodRanges — não tem de ser
+   contíguo). Cada dia tem 2 listas: trabalho normal + banco. Os dias de
+   semanas de fronteira que NÃO pertencem a nenhum bloco escolhido (antes do
+   1.º dia ou depois do último) ficam editáveis no bloco mais próximo
+   (1.º/último), para que a semana completa seja sempre visível. Dentro do
+   período, cada dia pertence sempre a um único bloco (o seu próprio mês),
+   evitando duplicação; meses não escolhidos entre dois blocos simplesmente
+   não geram linhas (não há "buraco" a preencher). */
 function renderManualCalendar(){
-  const host=document.getElementById('manualCal'); if(!host || !UI.calFirst) return;
+  const host=document.getElementById('manualCal'); if(!host || !UI.periodRanges || !UI.periodRanges.length) return;
   const DOW=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
-  const monthsPT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const monthsPT=MONTHS_PT;
   const workOpts=(sel)=>['<option value="">—</option>'].concat(
     Object.entries(WORK_TYPES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.label} (${v.hours()}h)</option>`)).join('');
   const bancoOpts=(sel)=>['<option value="">— banco —</option>'].concat(
     Object.entries(BANCO_TYPES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.label}</option>`)).join('');
 
-  // blocos = meses do período (calFirst..calLast) — mensal:1 · anual:12
-  const firstD=parseISO(UI.calFirst), lastD=parseISO(UI.calLast);
-  const blocksMeta=[];
-  let cur=new Date(firstD.getFullYear(), firstD.getMonth(), 1);
-  while(cur<=lastD){
-    const y=cur.getFullYear(), m=cur.getMonth()+1;
-    blocksMeta.push({y,m,
-      mFirst:`${y}-${String(m).padStart(2,'0')}-01`,
-      mLast:`${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`});
-    cur=new Date(y,m,1);
-  }
-  // dono de uma data: o bloco cujo mês a contém; se for anterior ao 1.º bloco
-  // ou posterior ao último, fica a cargo do bloco extremo mais próximo.
+  // blocos = exatamente os meses escolhidos (UI.periodRanges), na ordem em que já vêm (cronológica)
+  const blocksMeta=UI.periodRanges;
+  const blockWeeks=blocksMeta.map(bm=>({wStart:mondayOfWeek(bm.firstISO), wEnd:sundayOfWeek(bm.lastISO)}));
+  // dono de uma data: primeiro o bloco cujo PRÓPRIO mês a contém; se for uma
+  // data de fronteira (fora de todos os meses escolhidos), o dono passa a ser
+  // o bloco cuja semana ALARGADA (a que o loop de renderização abaixo
+  // realmente percorre) a contém — evita datas "órfãs" quando dois meses
+  // escolhidos estão próximos mas não são consecutivos (ex.: Janeiro+Março,
+  // salta Fevereiro: o dia 1 de fevereiro só é visitado pela semana alargada
+  // de Janeiro, nunca pela de Março, por isso tem de pertencer a Janeiro).
   function ownerIndex(date){
-    for(let i=0;i<blocksMeta.length;i++) if(date>=blocksMeta[i].mFirst && date<=blocksMeta[i].mLast) return i;
-    return date<blocksMeta[0].mFirst ? 0 : blocksMeta.length-1;
+    for(let i=0;i<blocksMeta.length;i++) if(date>=blocksMeta[i].firstISO && date<=blocksMeta[i].lastISO) return i;
+    for(let i=0;i<blockWeeks.length;i++) if(date>=blockWeeks[i].wStart && date<=blockWeeks[i].wEnd) return i;
+    return date<blocksMeta[0].firstISO ? 0 : blocksMeta.length-1;   // nunca deve chegar aqui
   }
 
   const blocks=blocksMeta.map((bm,bi)=>{
-    // semana alargada até UI.calRenderStart/End nas pontas do período
-    const wStart=parseISO(mondayOfWeek(bm.mFirst>UI.calRenderStart?bm.mFirst:UI.calRenderStart));
-    const wEnd=parseISO(sundayOfWeek(bm.mLast<UI.calRenderEnd?bm.mLast:UI.calRenderEnd));
+    // semana alargada até à Seg/Dom que envolve o próprio mês deste bloco
+    const wStart=parseISO(mondayOfWeek(bm.firstISO));
+    const wEnd=parseISO(sundayOfWeek(bm.lastISO));
     let rows='';
     let dd=new Date(wStart);
     while(dd<=wEnd){
@@ -1561,6 +1612,10 @@ function collectEntries(){
    PARTE F — CALCULAR + OUTPUTS
    ========================================================================= */
 function isDL119Enabled(){ const e=document.getElementById('chkDL119'); return !!(e&&e.checked); }
+// Horas E já realizadas fora do período aqui inserido (ver ponto 1) — soma-se
+// ao total do período para o limite anual do DL119 (250h/150h) ser avaliado
+// corretamente mesmo quando nem todos os meses do ano estão na ferramenta.
+function dl119PriorHours(){ const e=document.getElementById('inpDL119PriorHours'); const v=e?parseFloat(e.value):0; return v>0?v:0; }
 
 function calculate(){
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
@@ -1572,16 +1627,23 @@ function calculate(){
   renderValidation(result.warnings); renderWeekly(result.weeklyStats); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
 
   const dl119Card=document.getElementById('dl119Card');
+  const priorRow=document.getElementById('dl119PriorRow');
   if(isDL119Enabled()){
-    // Anual: usa o total real do ano. Mensal: projeção ×12 (claramente rotulada).
-    const isReal=isAnual();
-    const erHoursYear=isReal ? result.totalErHours : round2((result.totalErHours||0)*12);
+    if(priorRow) priorRow.style.display='';
+    // Total anual = horas ER do(s) mês(es) aqui inseridos + horas já feitas
+    // antes (input manual) — precisa e não depende de o período cobrir o
+    // ano inteiro (ver ponto "Horas E já realizadas antes deste período").
+    const priorH=dl119PriorHours();
+    const erHoursYear=round2((result.totalErHours||0)+priorH);
     const dctx={regime:ctx.regime, hourly:ctx.hourly, erEurTotal:result.erEur, erHoursTotal:result.totalErHours};
     const dl119=computeDL119(erHoursYear, dctx, UI.dl119MajBlocks);
     const windows=dl119WeekendWindows(result.weeklyStats);
-    renderDL119(dl119, windows, isReal, erHoursYear);
+    renderDL119(dl119, windows, priorH, erHoursYear);
     if(dl119Card) dl119Card.style.display='block';
-  } else if(dl119Card){ dl119Card.style.display='none'; }
+  } else {
+    if(priorRow) priorRow.style.display='none';
+    if(dl119Card) dl119Card.style.display='none';
+  }
 }
 function renderWeekly(weeklyStats){
   const card=document.getElementById('weeklyCard'); if(!card) return;
@@ -1676,22 +1738,23 @@ function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 function renderAnnual(result){
   document.getElementById('annualCard').style.display='block';
   const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
-  const base=currentMonthlyBase(), extra=result.totalExtraEur||0, anual=isAnual();
+  const base=currentMonthlyBase(), extra=result.totalExtraEur||0, n=numMeses(), full=(n===12);
   const baseAnnual=base*14;
-  const extraAnnual = anual ? extra : extra*12;   // anual: dados reais do ano; mensal: projeção ×12
+  // 12 meses inseridos: soma real, sem escalar. Menos de 12: extrapola ×(12/n).
+  const extraAnnual = full ? extra : round2(extra*(12/n));
   const total=baseAnnual+extraAnnual;
   tb.innerHTML=
     `<tr><td>Vencimento base</td><td class="num small">${eur(base)} × 14</td><td class="num">${eur(baseAnnual)}</td></tr>`+
-    `<tr><td>Extra ER+TN ${anual?'(ano inserido)':'(projeção deste mês)'}</td>`+
-    `<td class="num small">${anual?'soma real':eur(extra)+' × 12'}</td><td class="num">${eur(extraAnnual)}</td></tr>`;
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, ${anual?'dados inseridos':'estimativa'})</td><td class="num">${eur(total)}</td></tr>`;
+    `<tr><td>Extra ER+TN ${full?`(${n} meses inseridos)`:`(${n} ${n===1?'mês':'meses'} → projeção ×12/${n})`}</td>`+
+    `<td class="num small">${full?'soma real':eur(extra)+` × 12/${n}`}</td><td class="num">${eur(extraAnnual)}</td></tr>`;
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, ${full?'dados inseridos':'estimativa'})</td><td class="num">${eur(total)}</td></tr>`;
 }
 
-function renderDL119(dl119, windows, isReal, erHoursYear){
+function renderDL119(dl119, windows, priorH, erHoursYear){
   const sum=document.getElementById('dl119Summary');
-  const label = isReal ? 'ano inserido' : `projeção anual (${erHoursYear.toFixed(1)}h = este mês × 12)`;
+  const label = priorH>0 ? `período inserido + ${priorH.toFixed(1)}h já feitas antes` : 'período inserido';
   if(!dl119.applies){
-    sum.innerHTML=`<div class="alert ${isReal?'ok':'info'}">
+    sum.innerHTML=`<div class="alert ok">
       Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
       Excesso: <b>${dl119.excess.toFixed(1)} h</b> — ainda não atinge o 1º bloco completo (48h), não se aplica o incentivo.</div>`;
     document.querySelector('#dl119BlocksTable tbody').innerHTML=`<tr><td colspan="5" class="muted">Sem blocos.</td></tr>`;
@@ -1759,8 +1822,6 @@ function exportCSV(which){
 
 /* ---- arranque ---- */
 document.getElementById('btnBuildCalendar').addEventListener('click',buildCalendar);
-document.getElementById('selMonth').addEventListener('change',buildCalendar);
-document.getElementById('selYear').addEventListener('change',buildCalendar);
 initSelectors(); renderConfirmBanner(); buildCalendar();
 </script>
 </body>
