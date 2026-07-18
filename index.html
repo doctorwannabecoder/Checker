@@ -166,6 +166,10 @@
       <label>Bolsa Horas (h/dia) <select id="selBolsaH"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small">Folga = 8 h fixas. Horas usadas na inserção manual.</span></label>
     </div>
+    <div class="row" style="margin-top:10px">
+      <label>Défice de horas inicial <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">Horas em falta transitadas de antes do período em análise — somam-se ao contrato da 1ª semana.</span></label>
+    </div>
   </div>
 
   <!-- 2 · período -->
@@ -244,6 +248,21 @@
 
   <div id="validationCard" class="card" style="display:none">
     <h2>⚠️ Validação e avisos</h2><div id="validationArea"></div>
+  </div>
+
+  <!-- RESUMO SEMANAL -->
+  <div id="weeklyCard" class="card" style="display:none">
+    <h2>📅 Resumo semanal (Segunda–Domingo)</h2>
+    <p class="small">Uma linha por semana <b>completa</b> (inclui dias fora do mês/ano para o cálculo ser exato).
+      Se uma semana não atingir o horário contratado, o défice transita como acréscimo à semana seguinte.</p>
+    <div style="overflow-x:auto">
+      <table id="weeklyTable">
+        <thead><tr><th>Semana</th><th class="num">Contrato da semana</th>
+          <th class="num">Horas trabalhadas</th><th class="num">TN (h)</th><th class="num">ER (h)</th>
+          <th class="num">Valor extra (€)</th><th class="num">Défice</th></tr></thead>
+        <tbody></tbody><tfoot></tfoot>
+      </table>
+    </div>
   </div>
 
   <!-- OUTPUT 1 -->
@@ -602,7 +621,7 @@ function computeEntry(entry, ctx, contractRem){
 }
 
 function computeMonth(entries, ctx){
-  const shifts=[], warnings=[], summaryMap={}, weekTotals={};
+  const shifts=[], warnings=[], summaryMap={}, weekTotals={}, weeklyStats=[];
   function ensure(a){
     if(!summaryMap[a.key]) summaryMap[a.key]={key:a.key,code:a.code,desc:a.desc,isER:a.isER,isTN:a.isTN,confirm:a.confirm,missing:a.missing,hours:0,eur:0};
     return summaryMap[a.key];
@@ -610,18 +629,33 @@ function computeMonth(entries, ctx){
   // Agrupar por semana ISO e processar em ordem cronológica (contrato semanal).
   const weeks={};
   entries.forEach(e=>{ const wk=isoWeekKey(e.date); (weeks[wk]=weeks[wk]||[]).push(e); });
+  // Défice de horas: se uma semana não atingir o contrato, o que falta
+  // transita como acréscimo ao contrato da semana seguinte.
+  let carryDeficit=Math.max(0, ctx.initialDeficit||0);
   Object.keys(weeks).sort().forEach(wk=>{
     const days=weeks[wk].slice().sort((a,b)=>a.date.localeCompare(b.date));
-    let contractRem=ctx.weeklyContract;
+    const deficitIn=carryDeficit;
+    const weekTarget=ctx.weeklyContract+deficitIn;
+    let contractRem=weekTarget;
+    let workedH=0, tnH=0, erH=0, weekEur=0;
     for(const e of days){
       const r=computeEntry(e, ctx, contractRem);
       contractRem=r.contractRemAfter;
       const dayHours=r.allocations.filter(a=>!a.isTN).reduce((s,a)=>s+a.hours,0);
       weekTotals[wk]=(weekTotals[wk]||0)+dayHours;
+      // estatística semanal: usa TODOS os dias da semana (incl. fronteira),
+      // para uma avaliação íntegra do cálculo — independente do resumo mensal.
+      const regHDay=(r.allocations.find(a=>a.key==='RW')||{hours:0}).hours;
+      workedH+=regHDay+r.totalH; tnH+=r.tnH; erH+=(r.erDayH+r.erNightH); weekEur+=r.shiftEur;
       if(e.inMonth===false) continue;   // fronteira: conta p/ contrato, não p/ resumo
       shifts.push(r); r.warnings.forEach(w=>warnings.push(w));
       r.allocations.forEach(a=>{ const row=ensure(a); row.hours+=a.hours; row.eur+=(a.eur||0); });
     }
+    const deficitOut=Math.max(0, contractRem);
+    weeklyStats.push({week:wk, monday:mondayOfWeek(days[0].date), sunday:sundayOfWeek(days[0].date),
+      target:round2(weekTarget), deficitIn:round2(deficitIn), workedH:round2(workedH),
+      tnH:round2(tnH), erH:round2(erH), eur:round2(weekEur), deficitOut:round2(deficitOut)});
+    carryDeficit=deficitOut;
   });
   Object.entries(weekTotals).forEach(([wk,h])=>{
     if(h>PAYROLL_RULES.limits.maxWeeklyHours)
@@ -630,7 +664,7 @@ function computeMonth(entries, ctx){
   const summary=Object.values(summaryMap).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   const erEur=round2(shifts.reduce((s,r)=>s+(r.erEur||0),0));
   const tnEur=round2(shifts.reduce((s,r)=>s+(r.tnEur||0),0));
-  return {summary, shifts, warnings, erEur, tnEur, totalExtraEur:round2(erEur+tnEur)};
+  return {summary, shifts, warnings, weeklyStats, erEur, tnEur, totalExtraEur:round2(erEur+tnEur)};
 }
 
 /* =========================================================================
@@ -926,6 +960,9 @@ function rotinaHours(){return parseFloat(document.getElementById('selRotinaH').v
 function tardeHours(){return parseFloat(document.getElementById('selTardeH').value)||0;}
 function extraHours(){return parseFloat(document.getElementById('selExtraH').value)||0;}
 function bolsaHours(){return parseFloat(document.getElementById('selBolsaH').value)||0;}
+// Défice de horas já existente ANTES do período em análise (soma-se ao
+// contrato da 1ª semana processada; ver PARTE C).
+function initialDeficitHours(){const e=document.getElementById('inpInitialDeficit');const v=e?parseFloat(e.value):0;return v>0?v:0;}
 function periodType(){const e=document.getElementById('selPeriodType');return e?e.value:'mensal';}
 function isAnual(){return periodType()==='anual';}
 
@@ -1114,9 +1151,10 @@ function buildGridFromPdf(emp){
 }
 
 /* ---- MANUAL ---- */
-/* Constrói as linhas manuais. Mensal: mês + os dias do mês ANTERIOR que ainda
-   pertencem à semana (Seg–Dom) do dia 1. Anual: ano completo (Jan–Dez), também
-   com a semana de fronteira inicial. */
+/* Constrói as linhas manuais. Mensal: mês + os dias do mês ANTERIOR/SEGUINTE
+   que ainda pertencem à semana (Seg–Dom) que contém o 1.º/último dia. Anual:
+   ano completo (Jan–Dez), com o mesmo alargamento nas duas pontas. Isto
+   garante que TODAS as semanas processadas pelo motor ficam visíveis. */
 function buildCalendar(){
   const y=+document.getElementById('selYear').value;
   const m=+document.getElementById('selMonth').value;
@@ -1124,9 +1162,10 @@ function buildCalendar(){
   const firstISO = anual ? `${y}-01-01` : `${y}-${String(m).padStart(2,'0')}-01`;
   const lastISO  = anual ? `${y}-12-31`
                          : `${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`;
-  const start=mondayOfWeek(firstISO);           // inclui dias do mês anterior da mesma semana
+  const renderStart=mondayOfWeek(firstISO);     // inclui dias do período ANTERIOR da mesma semana
+  const renderEnd=sundayOfWeek(lastISO);        // inclui dias do período SEGUINTE da mesma semana
   UI.manualRows=[]; UI.rowByDate={};
-  let d=parseISO(start), end=parseISO(lastISO);
+  let d=parseISO(renderStart), end=parseISO(renderEnd);
   while(d<=end){
     const date=iso(d);
     // pré-preenche dias úteis (não feriados) com Rotina
@@ -1135,13 +1174,17 @@ function buildCalendar(){
     UI.manualRows.push(row); UI.rowByDate[date]=row;
     d=addDays(d,1);
   }
-  UI.calFirst=firstISO; UI.calLast=lastISO; UI.calStart=start;
+  UI.calFirst=firstISO; UI.calLast=lastISO;
+  UI.calRenderStart=renderStart; UI.calRenderEnd=renderEnd;
   renderManualCalendar(); updateWeeklyHint();
 }
 
-/* Calendário: um bloco por mês, semanas na horizontal (Seg–Dom).
-   Cada dia tem 2 listas: trabalho normal + banco. Dias fora do intervalo
-   aparecem como célula vazia (pertencem ao bloco do mês vizinho). */
+/* Calendário: um bloco por mês do período (mensal = 1 bloco; anual = 12).
+   Cada dia tem 2 listas: trabalho normal + banco. Os dias de semanas de
+   fronteira que NÃO pertencem a nenhum bloco do período (antes do 1.º dia ou
+   depois do último) ficam editáveis no bloco mais próximo (1.º/último), para
+   que a semana completa seja sempre visível. Dentro do período, cada dia
+   pertence sempre a um único bloco (o seu próprio mês), evitando duplicação. */
 function renderManualCalendar(){
   const host=document.getElementById('manualCal'); if(!host || !UI.calFirst) return;
   const DOW=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
@@ -1151,17 +1194,28 @@ function renderManualCalendar(){
   const bancoOpts=(sel)=>['<option value="">— banco —</option>'].concat(
     Object.entries(BANCO_TYPES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.label}</option>`)).join('');
 
-  // meses a desenhar
+  // blocos = meses do período (calFirst..calLast) — mensal:1 · anual:12
   const firstD=parseISO(UI.calFirst), lastD=parseISO(UI.calLast);
-  const blocks=[];
+  const blocksMeta=[];
   let cur=new Date(firstD.getFullYear(), firstD.getMonth(), 1);
   while(cur<=lastD){
     const y=cur.getFullYear(), m=cur.getMonth()+1;
-    const mFirst=`${y}-${String(m).padStart(2,'0')}-01`;
-    const mLast=`${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`;
-    // semanas que cobrem o mês (limitadas ao intervalo global no início)
-    const wStart=parseISO(mondayOfWeek(mFirst>UI.calStart?mFirst:UI.calStart));
-    const wEnd=parseISO(sundayOfWeek(mLast<UI.calLast?mLast:UI.calLast));
+    blocksMeta.push({y,m,
+      mFirst:`${y}-${String(m).padStart(2,'0')}-01`,
+      mLast:`${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`});
+    cur=new Date(y,m,1);
+  }
+  // dono de uma data: o bloco cujo mês a contém; se for anterior ao 1.º bloco
+  // ou posterior ao último, fica a cargo do bloco extremo mais próximo.
+  function ownerIndex(date){
+    for(let i=0;i<blocksMeta.length;i++) if(date>=blocksMeta[i].mFirst && date<=blocksMeta[i].mLast) return i;
+    return date<blocksMeta[0].mFirst ? 0 : blocksMeta.length-1;
+  }
+
+  const blocks=blocksMeta.map((bm,bi)=>{
+    // semana alargada até UI.calRenderStart/End nas pontas do período
+    const wStart=parseISO(mondayOfWeek(bm.mFirst>UI.calRenderStart?bm.mFirst:UI.calRenderStart));
+    const wEnd=parseISO(sundayOfWeek(bm.mLast<UI.calRenderEnd?bm.mLast:UI.calRenderEnd));
     let rows='';
     let dd=new Date(wStart);
     while(dd<=wEnd){
@@ -1169,11 +1223,10 @@ function renderManualCalendar(){
       for(let k=0;k<7;k++){
         const date=iso(dd);
         const row=UI.rowByDate[date];
-        const inThisMonth=(date>=mFirst && date<=mLast);
-        if(!row || !inThisMonth){
-          // dia de outro mês (ou fora do intervalo) -> célula neutra, sem duplicar edição
-          const lbl=row?`<div class="dnum">${parseISO(date).getDate()}</div>`:'';
-          tds+=`<td class="blank">${lbl}</td>`;
+        if(!row){ tds+=`<td class="blank"></td>`; dd=addDays(dd,1); continue; }
+        if(ownerIndex(date)!==bi){
+          // pertence a outro bloco -> célula neutra aqui, sem duplicar edição
+          tds+=`<td class="blank"><div class="dnum">${parseISO(date).getDate()}</div></td>`;
         } else {
           const kind=dayKind(date);
           const cls=[kind!=='weekday'?'fds':'', !row.inMonth?'out':''].filter(Boolean).join(' ');
@@ -1186,10 +1239,9 @@ function renderManualCalendar(){
       }
       rows+=`<tr>${tds}</tr>`;
     }
-    blocks.push(`<div class="mcal"><h3>${monthsPT[m-1]} ${y}</h3>
-      <table><thead><tr>${DOW.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`);
-    cur=new Date(y, m, 1);
-  }
+    return `<div class="mcal"><h3>${monthsPT[bm.m-1]} ${bm.y}</h3>
+      <table><thead><tr>${DOW.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  });
   host.innerHTML=blocks.join('');
   host.querySelectorAll('select').forEach(el=>el.addEventListener('change',e=>{
     const date=e.target.dataset.d, f=e.target.dataset.f;
@@ -1296,11 +1348,36 @@ function collectEntries(){
 function calculate(){
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
   if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (${UI.inputMode==='paste'?'importe o PDF ou preencha a grelha':'preencha o manual'}).</span>`; return; }
-  const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:erHourly()};
+  const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:erHourly(), initialDeficit:initialDeficitHours()};
   const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
   const nER=result.shifts.filter(s=>s.isER).length;
   meta.innerHTML=`<span class="small">${UI.name?escapeHtml(UI.name)+' · ':''}${SALARY_TABLE[currentCategory()].label} (${REGIME_LABELS[currentRegime()]}) · ${nER} turno(s) ER · extra ${eur(result.totalExtraEur)}</span>`;
-  renderValidation(result.warnings); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
+  renderValidation(result.warnings); renderWeekly(result.weeklyStats); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
+}
+function renderWeekly(weeklyStats){
+  const card=document.getElementById('weeklyCard'); if(!card) return;
+  card.style.display='block';
+  const tb=document.querySelector('#weeklyTable tbody'), tf=document.querySelector('#weeklyTable tfoot');
+  if(!weeklyStats || !weeklyStats.length){ tb.innerHTML=`<tr><td colspan="7" class="muted">Sem semanas.</td></tr>`; tf.innerHTML=''; return; }
+  tb.innerHTML=weeklyStats.map(w=>{
+    const defBadge=w.deficitOut>0?`<span class="badge missing">−${w.deficitOut.toFixed(2)}h</span>`:'<span class="small muted">—</span>';
+    return `<tr><td>${formatPT(w.monday)}–${formatPT(w.sunday)} <span class="small muted">(${w.week})</span></td>
+      <td class="num">${w.target.toFixed(2)} h${w.deficitIn>0?` <span class="small muted">(+${w.deficitIn.toFixed(2)} défice)</span>`:''}</td>
+      <td class="num">${w.workedH.toFixed(2)}</td>
+      <td class="num">${w.tnH.toFixed(2)}</td>
+      <td class="num">${w.erH.toFixed(2)}</td>
+      <td class="num">${eur(w.eur)}</td>
+      <td class="num">${defBadge}</td></tr>`;
+  }).join('');
+  const sum=(f)=>weeklyStats.reduce((s,w)=>s+w[f],0);
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220">
+    <td>TOTAL (${weeklyStats.length} semana${weeklyStats.length===1?'':'s'})</td>
+    <td class="num">—</td>
+    <td class="num">${round2(sum('workedH')).toFixed(2)}</td>
+    <td class="num">${round2(sum('tnH')).toFixed(2)}</td>
+    <td class="num">${round2(sum('erH')).toFixed(2)}</td>
+    <td class="num">${eur(round2(sum('eur')))}</td>
+    <td class="num">${weeklyStats[weeklyStats.length-1].deficitOut>0?('−'+weeklyStats[weeklyStats.length-1].deficitOut.toFixed(2)+'h'):'—'}</td></tr>`;
 }
 function renderValidation(warnings){
   document.getElementById('validationCard').style.display='block';
