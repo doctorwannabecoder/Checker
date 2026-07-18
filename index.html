@@ -565,12 +565,19 @@ function computeEntry(entry, ctx, contractRem){
   let totalH=durMin>0?durMin/60:0, tnH=0, erDayH=0, erNightH=0, contractDayH=0, erEur=0, tnEur=0;
   let contractRemAfter=(typeof contractRem==='number')?contractRem:Infinity;
 
-  // 1) Trabalho normal do dia (Rotina/Tarde/Extra) — pago pela base e consome
-  //    o contrato semanal ANTES do turno de banco (ER) do mesmo dia.
+  // 1) Trabalho normal do dia (Rotina/Tarde/Extra/Bolsa/Folga) — pago pela
+  //    base. NOTA: já NÃO consome aqui o `contractRem` recebido — esse valor
+  //    chega de computeMonth já líquido do total de horas normais da SEMANA
+  //    INTEIRA (calculado antecipadamente), para que o resultado do turno de
+  //    banco não dependa de em que dia da semana ele cai (ver PARTE C).
   const regH=(typeof entry.regularHours==='number' && entry.regularHours>0)?entry.regularHours:0;
-  if(regH>0){
-    addAlloc(allocMap,'RW', regH, 0, {});
-    if(contractRemAfter!==Infinity) contractRemAfter=contractRemAfter-regH;
+  if(regH>0) addAlloc(allocMap,'RW', regH, 0, {});
+
+  // Banco Dia (08:00–20:00) no MESMO dia que trabalho normal não faz sentido
+  // (sobrepõem-se) — nunca é ignorado silenciosamente, fica assinalado.
+  if(entry.er && regH>0 && entry.start==='08:00' && entry.end==='20:00'){
+    const wt=WORK_TYPES[entry.workType];
+    warnings.push({type:'err',msg:`${date}: Banco Dia (08:00–20:00) não pode coexistir com ${wt?wt.label:'trabalho normal'} no mesmo dia — escolha um dos dois.`});
   }
 
   // 2) Turno de banco (ER)
@@ -622,6 +629,24 @@ function computeMonth(entries, ctx){
     if(!summaryMap[a.key]) summaryMap[a.key]={key:a.key,code:a.code,desc:a.desc,isER:a.isER,isTN:a.isTN,confirm:a.confirm,hours:0,eur:0};
     return summaryMap[a.key];
   }
+
+  // Dedicação Plena: o dia a seguir a um Banco Noite é dia de descanso —
+  // não pode estar marcado como Rotina (tem de ser Bolsa/Extra/Folga/vazio).
+  // Verifica-se sobre TODAS as entradas (independente de semana/mês), para
+  // apanhar também transições entre semanas ou entre meses.
+  if(ctx.regime==='plena'){
+    const byDate={}; entries.forEach(e=>{ byDate[e.date]=e; });
+    entries.forEach(e=>{
+      if(e.bancoType!=='noite') return;
+      const nextDate=iso(addDays(parseISO(e.date),1));
+      const next=byDate[nextDate];
+      if(next && next.workType==='rotina'){
+        warnings.push({type:'err',
+          msg:`${nextDate}: Dedicação Plena — dia a seguir a Banco Noite (${e.date}) não pode ser Rotina (use Bolsa Horas, Extra ou Folga).`});
+      }
+    });
+  }
+
   // Agrupar por semana ISO e processar em ordem cronológica (contrato semanal).
   const weeks={};
   entries.forEach(e=>{ const wk=isoWeekKey(e.date); (weeks[wk]=weeks[wk]||[]).push(e); });
@@ -632,7 +657,13 @@ function computeMonth(entries, ctx){
     const days=weeks[wk].slice().sort((a,b)=>a.date.localeCompare(b.date));
     const deficitIn=carryDeficit;
     const weekTarget=ctx.weeklyContract+deficitIn;
-    let contractRem=weekTarget;
+    // Soma TODAS as horas normais (Rotina/Tarde/Extra/Bolsa/Folga) da semana
+    // ANTES de processar os turnos de banco — assim o "espaço" que sobra para
+    // contrato é fixo para a semana toda, e não depende de em que dia da
+    // semana o turno de banco calha (só a ORDEM entre vários turnos de banco
+    // na mesma semana continua a importar, entre si).
+    const weekRegularTotal=days.reduce((s,e)=>s+((typeof e.regularHours==='number'&&e.regularHours>0)?e.regularHours:0),0);
+    let contractRem=Math.max(0, weekTarget-weekRegularTotal);
     let workedH=0, tnH=0, erH=0, weekEur=0;
     for(const e of days){
       const r=computeEntry(e, ctx, contractRem);
@@ -647,6 +678,8 @@ function computeMonth(entries, ctx){
       shifts.push(r); r.warnings.forEach(w=>warnings.push(w));
       r.allocations.forEach(a=>{ const row=ensure(a); row.hours+=a.hours; row.eur+=(a.eur||0); });
     }
+    // défice = parte do "espaço" de contrato (já líquido das horas normais)
+    // que nenhum turno de banco chegou a preencher nesta semana.
     const deficitOut=Math.max(0, contractRem);
     weeklyStats.push({week:wk, monday:mondayOfWeek(days[0].date), sunday:sundayOfWeek(days[0].date),
       target:round2(weekTarget), deficitIn:round2(deficitIn), workedH:round2(workedH),
@@ -946,7 +979,7 @@ function eur(n){return (Math.round((n+Number.EPSILON)*100)/100).toLocaleString('
 function fillRegimeOptions(){
   const cat=SALARY_TABLE[currentCategory()]; const sr=document.getElementById('selRegime');
   const keys=cat?Object.keys(cat.regimes):['geral'];
-  sr.innerHTML=keys.map(k=>`<option value="${k}" ${k==='exclusiva'?'selected':''}>${REGIME_LABELS[k]||k}</option>`).join('');
+  sr.innerHTML=keys.map(k=>`<option value="${k}" ${k==='geral'?'selected':''}>${REGIME_LABELS[k]||k}</option>`).join('');
   if(!keys.includes(sr.value)) sr.value=keys[0];
 }
 function onCategoryChange(){ fillRegimeOptions(); updateWeeklyHint(); }
@@ -1311,8 +1344,10 @@ function renderGrid(){
 }
 
 /* Normaliza as duas origens (manual / PDF) para a forma que o motor consome:
-   {date, inMonth, regularHours, er, start, end, prevention}
-   Banco Dia = 08:00–20:00 · Banco Noite = 20:00–08:00 · ambos = 08:00–08:00 (24h). */
+   {date, inMonth, regularHours, er, start, end, prevention, workType, bancoType}
+   Banco Dia = 08:00–20:00 · Banco Noite = 20:00–08:00 · ambos = 08:00–08:00 (24h).
+   workType/bancoType (só no modo manual) identificam a droplist escolhida
+   (ex.: 'rotina', 'noite') — usados nas validações por regime. */
 function collectEntries(){
   if(UI.inputMode==='manual'){
     return UI.manualRows.filter(r=>r.work||r.banco)
@@ -1320,7 +1355,8 @@ function collectEntries(){
         const regularHours=workHoursOf(r.work);
         const b=BANCO_TYPES[r.banco];
         return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
-                er:!!b, start:b?b.start:'', end:b?b.end:'', prevention:false};
+                er:!!b, start:b?b.start:'', end:b?b.end:'', prevention:false,
+                workType:r.work||'', bancoType:r.banco||''};
       });
   }
   // PDF -> grelha
@@ -1343,10 +1379,10 @@ function collectEntries(){
 function calculate(){
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
   if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (${UI.inputMode==='paste'?'importe o PDF ou preencha a grelha':'preencha o manual'}).</span>`; return; }
-  const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:erHourly(), initialDeficit:initialDeficitHours()};
+  const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:erHourly(),
+    initialDeficit:initialDeficitHours(), regime:currentRegime()};
   const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
-  const nER=result.shifts.filter(s=>s.isER).length;
-  meta.innerHTML=`<span class="small">${UI.name?escapeHtml(UI.name)+' · ':''}${SALARY_TABLE[currentCategory()].label} (${REGIME_LABELS[currentRegime()]}) · ${nER} turno(s) ER · extra ${eur(result.totalExtraEur)}</span>`;
+  meta.innerHTML='';
   renderValidation(result.warnings); renderWeekly(result.weeklyStats); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
 }
 function renderWeekly(weeklyStats){
