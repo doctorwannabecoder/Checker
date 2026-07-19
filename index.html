@@ -167,10 +167,6 @@
       <label>Bolsa Horas (h/dia) <select id="selBolsaH"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small">Folga = 8 h fixas. Horas usadas na inserção manual.</span></label>
     </div>
-    <div class="row" style="margin-top:10px">
-      <label>Défice de horas inicial <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">Horas em falta transitadas até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span></label>
-    </div>
     <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
       <label class="inline"><input type="checkbox" id="chkDL119" onchange="calculate()"/>
         <span>Incentivo excecional <b>DL 119/2026</b> (horas ER além do limite legal anual)</span></label>
@@ -191,9 +187,13 @@
       <label>Número de meses <select id="selNumMeses" onchange="onNumMesesChange()"></select></label>
       <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
     </div>
-    <p class="small">Os meses são sempre <b>seguidos</b> a partir do mês inicial — é isso que permite aos valores
-      "prévios" (ponto 1) fazerem sentido: aplicam-se sempre ao estado no <b>último dia do mês imediatamente
-      anterior</b> ao mês inicial. <span id="periodHint"></span></p>
+    <div class="row" style="margin-top:10px">
+      <label>Défice de horas inicial <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">Horas em falta transitadas até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span></label>
+    </div>
+    <p class="small">Os meses são sempre <b>seguidos</b> a partir do mês inicial — é isso que permite ao défice
+      acima (e às horas E do DL119, no ponto 1) fazerem sentido: aplicam-se sempre ao estado no <b>último dia
+      do mês imediatamente anterior</b> ao mês inicial. <span id="periodHint"></span></p>
   </div>
 
   <!-- 3 · entrada -->
@@ -208,8 +208,8 @@
     <div id="paneManual" class="pane active">
       <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> (Rotina/Tarde/Extra/Folga/Bolsa) e
         <b>banco</b> (Dia 08:00–20:00 · Noite 20:00–08:00 · 24h). Os dias úteis vêm pré-preenchidos com
-        <b>Rotina</b>. Semana de <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
-      <div id="manualCal" style="overflow:auto;max-height:640px"></div>
+        <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
+      <div id="manualCal" style="overflow-x:auto"></div>
     </div>
 
     <!-- PDF (só em modo mensal) -->
@@ -270,7 +270,7 @@
     <div style="overflow-x:auto">
       <table id="summaryTable">
         <thead><tr><th>Categoria</th><th>Descrição / Tipo</th><th class="num">Horas</th>
-          <th class="num">Valor (€)</th><th>Notas</th></tr></thead>
+          <th class="num">€/hora</th><th class="num">Valor (€)</th><th>Notas</th></tr></thead>
         <tbody></tbody><tfoot></tfoot>
       </table>
     </div>
@@ -732,7 +732,7 @@ function computeEntry(entry, ctx, contractRem){
 function computeMonth(entries, ctx){
   const shifts=[], warnings=[], summaryMap={}, weekTotals={}, weeklyStats=[];
   function ensure(a){
-    if(!summaryMap[a.key]) summaryMap[a.key]={key:a.key,code:a.code,desc:a.desc,isER:a.isER,isTN:a.isTN,confirm:a.confirm,hours:0,eur:0};
+    if(!summaryMap[a.key]) summaryMap[a.key]={key:a.key,code:a.code,desc:a.desc,isER:a.isER,isTN:a.isTN,confirm:a.confirm,mult:a.mult,hours:0,eur:0};
     return summaryMap[a.key];
   }
 
@@ -1153,6 +1153,15 @@ function currentHourly(){return currentSalary().h||0;} // valor/hora da tabela S
 function currentMonthlyBase(){return currentSalary().m||0;}
 // €/hora base do trabalho extraordinário (ER) = valor/hora da tabela (posição/regime).
 function erHourly(){return currentHourly();}
+// Dedicação Plena: a tabela SIM já inclui, no valor mensal/hora do regime
+// "plena", o suplemento de disponibilidade de 25% sobre o ordenado base
+// (confirmado: plena.m = geral.m × 1,25 em todas as categorias). Esta função
+// só DECOMPÕE o valor já existente para o mostrar separadamente — não soma
+// nada de novo (evita duplicar o suplemento).
+function plenaSupplementMonthly(){
+  if(currentRegime()!=='plena') return 0;
+  return round2(currentMonthlyBase()*0.2); // = m − m/1.25
+}
 function eur(n){return (Math.round((n+Number.EPSILON)*100)/100).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
 
 // Preenche o seletor de regime conforme a categoria (IFE só tem "geral").
@@ -1417,8 +1426,9 @@ function buildCalendar(){
       const inThis=(date>=firstISO && date<=lastISO);
       let row=UI.rowByDate[date];
       if(!row){
-        // pré-preenche dias úteis (não feriados) com Rotina
-        const work=(dayKind(date)==='weekday')?'rotina':'';
+        // pré-preenche: dias úteis com Rotina; feriados com Folga (8h fixas)
+        const kind=dayKind(date);
+        const work = kind==='weekday' ? 'rotina' : (kind==='holiday' ? 'folga' : '');
         row={date, inMonth:inThis, work, banco:''};
         UI.manualRows.push(row); UI.rowByDate[date]=row;
       } else if(inThis){
@@ -1673,22 +1683,28 @@ function renderSummary(summary,result){
   const rows=summary.slice();
   if(!rows.some(r=>r.key==='RW')) rows.unshift({key:'RW',code:'Base',desc:'Remuneração base',hours:0,eur:0,isER:false,isTN:false,confirm:false});
   if(!rows.length){tb.innerHTML=`<tr><td colspan="5" class="muted">Sem horas.</td></tr>`;tf.innerHTML='';return;}
+  const hourly=currentHourly();
   tb.innerHTML=rows.map(r=>{
     const isBase=(r.key==='RW');
     const val=isBase?baseEur:r.eur;
     const showVal=(isBase||r.isER||r.isTN)?eur(val):'—';
+    const rate=isBase?hourly:(r.mult?round2(hourly*r.mult):null);
+    const showRate=(rate!=null)?eur(rate)+(r.mult&&!isBase?` (×${r.mult})`:''):'—';
     const note=isBase?'Vencimento base mensal':(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—')));
     return `<tr>
       <td><span class="badge code">${r.code}</span></td>
       <td>${r.desc}${codeBadges(r)}</td>
       <td class="num">${r.hours.toFixed(2)}</td>
+      <td class="num small">${showRate}</td>
       <td class="num">${showVal}</td>
       <td class="small">${note}</td></tr>`;
   }).join('');
+  const plenaSup=(currentRegime()==='plena')?plenaSupplementMonthly():0;
   const totalExtra=result?result.totalExtraEur:0;
   const totalEur=baseEur+totalExtra;
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220">
-    <td colspan="3">TOTAIS · extra ER+TN</td>
+  const supRow=plenaSup>0?`<tr><td colspan="4" class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base, pago 14×/ano)</td><td class="num">${eur(plenaSup)}</td><td></td></tr>`:'';
+  tf.innerHTML=supRow+`<tr style="font-weight:700;background:#0b1220">
+    <td colspan="4">TOTAIS · extra ER+TN</td>
     <td class="num">${eur(totalExtra)}</td>
     <td class="small">Base ${eur(baseEur)} + extra = <b>${eur(totalEur)}</b> bruto/mês</td></tr>`;
 }
@@ -1697,12 +1713,11 @@ function renderShifts(shifts){
   const area=document.getElementById('shiftsArea');
   if(!shifts.length){area.innerHTML=`<div class="muted">Nenhum turno ER no período.</div>`;return;}
   area.innerHTML=shifts.map(s=>{
-    const allocs=s.allocations.map(a=>{
-      const cls=a.isTN?'tn':(a.key==='RW'?'reg':(a.key==='PREV'?'prev':'er'));
-      const val=(a.isER||a.isTN)?` · <b>${eur(a.eur)}</b>`:'';
+    const allocs=s.allocations.filter(a=>a.isER||a.isTN).map(a=>{
+      const cls=a.isTN?'tn':'er';
       const mult=a.mult?` <span class="small">(×${a.mult})</span>`:'';
       return `<span class="splitline"><span class="pill ${cls}">${a.code}</span>
-        <span class="small">${a.desc}${codeBadges(a)} → <b>${a.hours.toFixed(2)} h</b>${mult}${val}</span></span>`;
+        <span class="small">${a.desc}${codeBadges(a)} → <b>${a.hours.toFixed(2)} h</b>${mult} · <b>${eur(a.eur)}</b></span></span>`;
     }).join('');
     const w=s.warnings.length?`<div style="margin-top:6px">${s.warnings.map(x=>`<div class="alert ${x.type}" style="margin:4px 0">${x.msg}</div>`).join('')}</div>`:'';
     return `<div class="shiftcard ${s.isFds?'fds':'weekday'}">
@@ -1710,12 +1725,7 @@ function renderShifts(shifts){
         ${s.holiday?`<span class="badge" style="border-color:var(--err);color:#fecaca">${s.holiday}</span>`:''}
         ${s.isFds?'<span class="badge">FDS/Feriado</span>':'<span class="badge">Dia útil</span>'}
         <span class="badge code">${eur(s.shiftEur)}</span></h3>
-      <div class="kv">
-        <span>Início: <b>${s.start||'—'}</b></span><span>Fim: <b>${s.end||'—'}</b></span>
-        <span>Horas totais: <b>${s.totalH.toFixed(2)}</b></span>
-        <span>Contrato: <b>${(s.contractDayH+s.tnH).toFixed(2)} h</b> (TN noturno ${s.tnH.toFixed(2)})</span>
-        <span>ER extraordinário: <b>${(s.erDayH+s.erNightH).toFixed(2)} h</b> (D ${s.erDayH.toFixed(2)} / N ${s.erNightH.toFixed(2)})</span></div>
-      <div class="small muted">Repartição por categoria de pagamento:</div>${allocs}${w}</div>`;
+      ${allocs}${w}</div>`;
   }).join('');
 }
 function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
@@ -1725,11 +1735,15 @@ function renderAnnual(result){
   const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
   const base=currentMonthlyBase(), extra=result.totalExtraEur||0, n=numMeses(), full=(n===12);
   const baseAnnual=base*14;
+  const plenaSup=(currentRegime()==='plena')?plenaSupplementMonthly():0;
+  const plenaSupAnnual=plenaSup*14;
   // 12 meses inseridos: soma real, sem escalar. Menos de 12: extrapola ×(12/n).
   const extraAnnual = full ? extra : round2(extra*(12/n));
   const total=baseAnnual+extraAnnual;
+  const supRow=plenaSup>0?`<tr><td class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base)</td><td class="num small">${eur(plenaSup)} × 14</td><td class="num">${eur(plenaSupAnnual)}</td></tr>`:'';
   tb.innerHTML=
     `<tr><td>Vencimento base</td><td class="num small">${eur(base)} × 14</td><td class="num">${eur(baseAnnual)}</td></tr>`+
+    supRow+
     `<tr><td>Extra ER+TN ${full?`(${n} meses inseridos)`:`(${n} ${n===1?'mês':'meses'} → projeção ×12/${n})`}</td>`+
     `<td class="num small">${full?'soma real':eur(extra)+` × 12/${n}`}</td><td class="num">${eur(extraAnnual)}</td></tr>`;
   tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, ${full?'dados inseridos':'estimativa'})</td><td class="num">${eur(total)}</td></tr>`;
