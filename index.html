@@ -57,6 +57,7 @@
   header h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-0.02em}
   header .sub{font-size:12px;color:var(--muted)}
   main{max-width:1680px;margin:0 auto;padding:18px}
+  footer{max-width:1680px;margin:0 auto;padding:14px 20px 28px;text-align:center;font-size:12px;color:var(--muted)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
   .card h2{margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--accent2);letter-spacing:-0.01em}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
@@ -119,7 +120,7 @@
   .mcal th{text-align:center;font-size:20px;font-weight:800;padding:6px 4px;position:static}
   .mcal th.weekcol,.mcal th.legendcol{font-size:11px;font-weight:700}
   .mcal td{vertical-align:top;padding:8px 6px;height:112px}
-  .mcal col.legendcol{width:58px}
+  .mcal col.legendcol{width:70px}
   .mcal col.daycol{width:auto}
   .mcal col.weekcol{width:190px}
   .mcal th.weekcol,.mcal td.weeksum{border-left:2px solid var(--line)}
@@ -144,7 +145,7 @@
   .mcal td.weeksum b{color:var(--text)}
   .mcal td.weeksum .muted{color:var(--muted)}
   @media print{
-    header,.tabs,.toolbar,.noprint{display:none!important}
+    header,footer,.tabs,.toolbar,.noprint{display:none!important}
     body{background:#fff;color:#000}.card{border-color:#ccc;background:#fff}
     th{background:#eee;color:#000}.card h2{color:#000}
   }
@@ -176,8 +177,8 @@
     <div class="row" style="margin-top:10px">
       <label>Rotina (h/dia) <select id="selRotinaH"></select></label>
       <label>Tarde (h/dia) <select id="selTardeH"></select></label>
-      <label>Extra (h/dia) <select id="selExtraH"></select></label>
-      <label>Bolsa Horas (h/dia) <select id="selBolsaH"></select></label>
+      <label>Alternativo (h/dia) <select id="selExtraH"></select></label>
+      <label>Bolsa de Horas (h/dia) <select id="selBolsaH"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small">Folga = 8 h fixas. Horas usadas na inserção manual.</span></label>
     </div>
     <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
@@ -200,12 +201,17 @@
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
     </div>
     <div class="row" style="margin-top:10px">
-      <label>Horas em défice (até ao fim do mês anterior) <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span></label>
+      <label>Horas em défice (até ao fim do mês anterior)
+        <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/>
+        <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span>
+      </label>
     </div>
     <div class="row" style="margin-top:10px">
-      <label>Horas E realizadas (até ao fim do mês anterior) <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">Até ao fim de <b id="priorMonthLabel2">—</b>. Usado para avaliar corretamente o limite anual do DL 119/2026 (250h/150h) quando ativo no ponto 1.</span></label>
+      <label>Horas Extra realizadas (até ao fim do mês anterior)
+        <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/>
+        <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel2">—</b>. Usado para avaliar corretamente o limite anual do DL 119/2026 (250h/150h) quando ativo no ponto 1.
+          As Horas Extra são as que aparecem no recibo — ex.: um Banco Noite (20:00–08:00) que atravesse a meia-noite do último dia do mês conta <b>4h no recibo desse mês</b> e <b>8h no recibo do mês seguinte</b>.</span>
+      </label>
     </div>
     <div class="row" id="dl119WeekendConfirmRow" style="margin-top:10px;display:none;border-top:1px solid var(--line);padding-top:10px">
       <label class="inline"><input type="checkbox" id="chkDL119WeekendConfirm" onchange="toggleDL119WeekendConfirm()"/>
@@ -225,9 +231,10 @@
 
     <!-- MANUAL (predefinição) — calendário: semanas na horizontal -->
     <div id="paneManual" class="pane active">
-      <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> (Rotina/Tarde/Extra/Folga/Bolsa) e
-        <b>banco</b> (Dia 08:00–20:00 · Noite 20:00–08:00 · 24h). Os dias úteis vêm pré-preenchidos com
-        <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
+      <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> (R Rotina · T Tarde · A Alternativo · F Folga · BH Bolsa de Horas) e
+        <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
+        dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de
+        <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
       <div id="manualCal" style="overflow-x:auto"></div>
     </div>
 
@@ -274,6 +281,12 @@
     </div>
   </div>
 
+  <div class="tabs">
+    <button id="tabOutMensal" class="active" onclick="switchOutputTab('mensal')">📅 Mensal</button>
+    <button id="tabOutAnual" onclick="switchOutputTab('anual')">📆 Anual</button>
+  </div>
+
+  <div id="paneOutMensal" class="pane active">
   <div id="validationCard" class="card" style="display:none">
     <h2>⚠️ Validação e avisos</h2><div id="validationArea"></div>
   </div>
@@ -307,20 +320,6 @@
     <div id="shiftsArea"></div>
   </div>
 
-  <!-- OUTPUT 3 · ANUAL -->
-  <div id="annualCard" class="card" style="display:none">
-    <h2>Output 3 · Estimativa anual de rendimento</h2>
-    <p class="small"><b>14×</b> vencimento base (12 meses + subsídios de férias e Natal) mais o extra ER+TN.
-      Se os 12 meses do ano estiverem inseridos (ponto 2), usa a soma real; com menos meses, extrapola
-      (×12/nº de meses), claramente assinalado como estimativa.</p>
-    <div style="overflow-x:auto">
-      <table id="annualTable">
-        <thead><tr><th>Componente</th><th class="num">Cálculo</th><th class="num">Valor anual (€)</th></tr></thead>
-        <tbody></tbody><tfoot></tfoot>
-      </table>
-    </div>
-  </div>
-
   <!-- OUTPUT 4 · DL 119/2026 (opcional) -->
   <div id="dl119Card" class="card" style="display:none">
     <h2>Output 4 · Incentivo excecional DL 119/2026 <span class="badge confirm">vários pontos por confirmar</span></h2>
@@ -348,7 +347,26 @@
       </table></div>
     </details>
   </div>
+  </div>
+
+  <div id="paneOutAnual" class="pane">
+  <!-- OUTPUT 3 · ANUAL -->
+  <div id="annualCard" class="card" style="display:none">
+    <h2>Output 3 · Estimativa anual de rendimento</h2>
+    <p class="small"><b>14×</b> vencimento base (12 meses + subsídios de férias e Natal) mais o extra ER+TN.
+      Se os 12 meses do ano estiverem inseridos (ponto 2), usa a soma real; com menos meses, extrapola
+      (×12/nº de meses), claramente assinalado como estimativa.</p>
+    <div style="overflow-x:auto">
+      <table id="annualTable">
+        <thead><tr><th>Componente</th><th class="num">Cálculo</th><th class="num">Valor anual (€)</th></tr></thead>
+        <tbody></tbody><tfoot></tfoot>
+      </table>
+    </div>
+  </div>
+  </div>
 </main>
+
+<footer>🧾 Verificador de ER / TN — ferramenta pessoal de autoconferência, sem valor oficial. Confirme sempre os valores finais com o recibo de vencimento.</footer>
 
 <script>
 /* =========================================================================
@@ -1263,9 +1281,9 @@ function priorAnchorLabel(){ const {y,m}=priorAnchorMonth(); return `${MONTHS_PT
 const WORK_TYPES = {
   rotina: {label:'Rotina', hours:()=>rotinaHours()},
   tarde:  {label:'Tarde',  hours:()=>tardeHours()},
-  extra:  {label:'Extra',  hours:()=>extraHours()},
+  extra:  {label:'Alternativo', hours:()=>extraHours()},
   folga:  {label:'Folga',  hours:()=>8},            // 8 h fixas
-  bolsa:  {label:'Bolsa Horas', hours:()=>bolsaHours()}
+  bolsa:  {label:'Bolsa de Horas', hours:()=>bolsaHours()}
 };
 /* Turnos de banco (ER) — janelas fixas; a "máscara" mantém as fórmulas intactas. */
 const BANCO_TYPES = {
@@ -1342,6 +1360,12 @@ function switchInputTab(mode){
   document.getElementById('tabPaste').classList.toggle('active',mode==='paste');
   document.getElementById('paneManual').classList.toggle('active',mode==='manual');
   document.getElementById('panePaste').classList.toggle('active',mode==='paste');
+}
+function switchOutputTab(mode){
+  document.getElementById('tabOutMensal').classList.toggle('active',mode==='mensal');
+  document.getElementById('tabOutAnual').classList.toggle('active',mode==='anual');
+  document.getElementById('paneOutMensal').classList.toggle('active',mode==='mensal');
+  document.getElementById('paneOutAnual').classList.toggle('active',mode==='anual');
 }
 function clearPasteBoxes(){['pastePart1','pastePart2','pastePart3'].forEach(id=>document.getElementById(id).value='');document.getElementById('parseWarnings').innerHTML='';}
 
@@ -1521,7 +1545,7 @@ function renderManualCalendar(){
   const DOW=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
   const monthsPT=MONTHS_PT;
   // Trabalho normal: tick único (só um tipo por dia) — à semelhança do banco.
-  const WORK_TOGGLE_LABELS={rotina:'R',tarde:'T',extra:'E',folga:'F',bolsa:'B'};
+  const WORK_TOGGLE_LABELS={rotina:'R',tarde:'T',extra:'A',folga:'F',bolsa:'BH'};
   const workToggles=(date,sel)=>{
     const btns=Object.entries(WORK_TYPES).map(([k,v])=>
       `<button type="button" class="work-btn${sel===k?' active':''}" data-k="${k}" title="${v.label} (${v.hours()}h)">${WORK_TOGGLE_LABELS[k]}</button>`).join('');
@@ -1536,7 +1560,7 @@ function renderManualCalendar(){
       <button type="button" class="banco-btn banco-n${isN?' active':''}" data-t="n" title="Banco Noite (20:00–08:00)">N</button>
     </div>`;
   };
-  const legendTd=`<td class="legend"><div class="legend-row">Dia</div><div class="legend-row">Trab.</div><div class="legend-row">Banco</div></td>`;
+  const legendTd=`<td class="legend"><div class="legend-row">Dia</div><div class="legend-row">Trab.</div><div class="legend-row">Urgência</div></td>`;
 
   // blocos = exatamente os meses escolhidos (UI.periodRanges), na ordem em que já vêm (cronológica)
   const blocksMeta=UI.periodRanges;
@@ -1591,19 +1615,24 @@ function renderManualCalendar(){
   host.querySelectorAll('.work-btn').forEach(btn=>btn.addEventListener('click',e=>{
     const wrap=btn.parentElement, date=wrap.dataset.d, key=btn.dataset.k;
     const row=UI.rowByDate[date]; if(!row) return;
-    const wasActive = row.work===key;
-    row.work = wasActive ? '' : key;
-    wrap.querySelectorAll('.work-btn').forEach(b=>b.classList.toggle('active', !wasActive && b.dataset.k===key));
+    row.work = (row.work===key) ? '' : key;
+    renderManualCalendar();
   }));
   host.querySelectorAll('.banco-btn').forEach(btn=>btn.addEventListener('click',e=>{
     const wrap=btn.parentElement, date=wrap.dataset.d, type=btn.dataset.t;
     const row=UI.rowByDate[date]; if(!row) return;
     const isD=(row.banco==='dia'||row.banco==='h24'), isN=(row.banco==='noite'||row.banco==='h24');
     const newD = type==='d' ? !isD : isD, newN = type==='n' ? !isN : isN;
+    const turnedOnNight = (type==='n' && newN && !isN);
     row.banco = newD&&newN ? 'h24' : newD ? 'dia' : newN ? 'noite' : '';
-    btn.classList.toggle('active', type==='d'?newD:newN);
-    const other=wrap.querySelector(type==='d'?'.banco-n':'.banco-d');
-    if(other) other.classList.toggle('active', type==='d'?newN:newD);
+    // Dedicação Plena: Urgência N implica descanso no dia seguinte -> muda
+    // automaticamente para Bolsa de Horas (evita o aviso manual anterior).
+    if(turnedOnNight && currentRegime()==='plena'){
+      const nextDate=iso(addDays(parseISO(date),1));
+      const nextRow=UI.rowByDate[nextDate];
+      if(nextRow) nextRow.work='bolsa';
+    }
+    renderManualCalendar();
   }));
 }
 
@@ -1682,11 +1711,14 @@ function collectEntries(){
   if(UI.inputMode==='manual'){
     return UI.manualRows.filter(r=>r.work||r.banco)
       .map(r=>{
-        const regularHours=workHoursOf(r.work);
+        // Urgência D (08:00–20:00) ou 24h sobrepõe-se ao horário diurno normal
+        // -> ignora o trabalho normal desse dia (evita duplicar horas).
+        const ignoresWork = (r.banco==='dia'||r.banco==='h24');
+        const regularHours=ignoresWork?0:workHoursOf(r.work);
         const b=BANCO_TYPES[r.banco];
         return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
                 er:!!b, start:b?b.start:'', end:b?b.end:'', prevention:false,
-                workType:r.work||'', bancoType:r.banco||''};
+                workType:ignoresWork?'':(r.work||''), bancoType:r.banco||''};
       });
   }
   // PDF -> grelha
@@ -1707,7 +1739,7 @@ function collectEntries(){
    PARTE F — CALCULAR + OUTPUTS
    ========================================================================= */
 function isDL119Enabled(){ const e=document.getElementById('chkDL119'); return !!(e&&e.checked); }
-// Horas E já realizadas fora do período aqui inserido (ver ponto 1) — soma-se
+// Horas Extra já realizadas fora do período aqui inserido (ver ponto 2) — soma-se
 // ao total do período para o limite anual do DL119 (250h/150h) ser avaliado
 // corretamente mesmo quando nem todos os meses do ano estão na ferramenta.
 function dl119PriorHours(){ const e=document.getElementById('inpDL119PriorHours'); const v=e?parseFloat(e.value):0; return v>0?v:0; }
