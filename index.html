@@ -190,7 +190,6 @@
     <div class="row">
       <label>Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
-      <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
     </div>
     <div class="row" style="margin-top:10px">
       <label>Horas em défice (à data de início do mês) <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
@@ -1910,7 +1909,6 @@ function exportCSV(which){
 }
 
 /* ---- arranque ---- */
-document.getElementById('btnBuildCalendar').addEventListener('click',buildCalendar);
 initSelectors(); renderConfirmBanner(); buildCalendar();
 </script>
 </body>
