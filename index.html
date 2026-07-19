@@ -180,16 +180,6 @@
       <label>Bolsa de Horas (h/dia) <select id="selBolsaH"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small">Folga = 8 h fixas. Horas usadas na inserção manual.</span></label>
     </div>
-    <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
-      <label class="inline"><input type="checkbox" id="chkDL119" onchange="calculate()"/>
-        <span>Incentivo excecional <b>DL 119/2026</b> em curso (limite legal anual ultrapassado)</span></label>
-      <span class="badge confirm">opcional · vários pontos por confirmar</span>
-    </div>
-    <div class="row" id="dl119LastBlockRow" style="margin-top:10px;display:none">
-      <label class="inline"><input type="checkbox" id="chkDL119LastBlock" onchange="calculate()"/>
-        <span>Considerar esta escala como o <b>último bloco autorizado do ano civil</b> (pagamento proporcional abaixo de 48h — Art.4º/4)</span></label>
-      <span class="badge confirm">confirmar</span>
-    </div>
   </div>
 
   <!-- 2 · período -->
@@ -205,24 +195,39 @@
         <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span>
       </label>
     </div>
-    <div class="row" style="margin-top:10px">
+    <p class="small">Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas. <span id="periodHint"></span></p>
+  </div>
+
+  <!-- 3 · DL 119/2026 -->
+  <div class="card">
+    <h2>3 · Incentivo excecional DL 119/2026</h2>
+    <div class="row">
+      <label class="inline"><input type="checkbox" id="chkDL119" onchange="calculate()"/>
+        <span>Incentivo excecional <b>DL 119/2026</b> em curso (limite legal anual ultrapassado)</span></label>
+      <span class="badge confirm">opcional · vários pontos por confirmar</span>
+    </div>
+    <div class="row" id="dl119PriorHoursRow" style="margin-top:10px;display:none">
       <label>Horas Extra realizadas (até ao fim do mês anterior)
         <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/>
-        <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel2">—</b>. Usado para avaliar corretamente o limite anual do DL 119/2026 (250h/150h) quando ativo no ponto 1.
+        <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel2">—</b>. Usado para avaliar corretamente o limite anual do DL 119/2026 (250h/150h).
           As Horas Extra são as que aparecem no recibo — ex.: um Banco Noite (20:00–08:00) que atravesse a meia-noite do último dia do mês conta <b>4h no recibo desse mês</b> e <b>8h no recibo do mês seguinte</b>.</span>
       </label>
+    </div>
+    <div class="row" id="dl119LastBlockRow" style="margin-top:10px;display:none">
+      <label class="inline"><input type="checkbox" id="chkDL119LastBlock" onchange="calculate()"/>
+        <span>Considerar esta escala como o <b>último bloco autorizado do ano civil</b> (pagamento proporcional das horas restantes abaixo de 48h — Art.4º/4)</span></label>
+      <span class="badge confirm">confirmar</span>
     </div>
     <div class="row" id="dl119WeekendConfirmRow" style="margin-top:10px;display:none;border-top:1px solid var(--line);padding-top:10px">
       <label class="inline"><input type="checkbox" id="chkDL119WeekendConfirm" onchange="toggleDL119WeekendConfirm()"/>
         <span>Houve pelo menos <b>48h de banco ao fim de semana</b> nas últimas 8 semanas?</span></label>
       <span class="badge confirm">confirmar</span>
     </div>
-    <p class="small">Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas. <span id="periodHint"></span></p>
   </div>
 
-  <!-- 3 · entrada -->
+  <!-- 4 · entrada -->
   <div class="card">
-    <h2>3 · Entrada</h2>
+    <h2>4 · Entrada</h2>
     <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> (R Rotina · T Tarde · A Alternativo · F Folga · BH Bolsa de Horas) e
       <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
       dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de
@@ -264,11 +269,9 @@
 
   <!-- OUTPUT 2 -->
   <div id="shiftsCard" class="card" style="display:none">
-    <h2>Output 2 · Detalhe individual por turno ER</h2>
-    <div class="toolbar noprint">
-      <button class="btn secondary" onclick="copyShifts()">📋 Copiar</button>
-      <button class="btn secondary" onclick="exportCSV()">⬇️ CSV</button>
-    </div>
+    <h2>Output 2 · Detalhe individual por turno ER
+      <button class="btn secondary noprint" style="font-size:12px;padding:4px 10px;margin-left:8px;vertical-align:middle" onclick="copyShifts()">📋 Copiar</button>
+    </h2>
     <div id="shiftsArea"></div>
   </div>
 
@@ -421,7 +424,7 @@ const REGIME_LABELS = { geral:'Geral', plena:'Dedicação plena', exclusiva:'Ded
    DL 119/2026, DE 17 DE JUNHO — Incentivo remuneratório excecional (médicos
    SNS, trabalho além do limite legal anual de suplementar, rede de urgência/
    UCI/cuidados intermédios). Texto oficial fornecido pelo utilizador.
-   FUNCIONALIDADE OPCIONAL — desligada por defeito (toggle no ponto 1).
+   FUNCIONALIDADE OPCIONAL — desligada por defeito (toggle no ponto 3).
    -------------------------------------------------------------------------
    REGRAS (conforme o diploma):
    • Art.4º/2: só se aplica a horas ER (extraordinário) além do limite ANUAL
@@ -840,7 +843,7 @@ function dl119BuildBlocks(excessHours, majBlocks, allowPartialLast){
 /* Calcula o incentivo DL119 a partir de um total de horas ER (anual real, ou
    projeção mensal×12) e do contexto salarial. `majBlocks` = Set opcional com
    os números de bloco confirmados manualmente como majorados (Art.5º/2-3).
-   `opts.priorHours` = horas E já realizadas ANTES deste período (ponto 2) —
+   `opts.priorHours` = horas Extra já realizadas ANTES deste período (ponto 3) —
    usado para isolar o incentivo NOVO deste período, subtraindo o que já
    tinha sido "ganho" (e presumivelmente pago) em períodos anteriores, para
    não duplicar o valor de blocos já liquidados noutros recibos.
@@ -939,9 +942,9 @@ function bolsaHours(){return parseFloat(document.getElementById('selBolsaH').val
 // contrato da 1ª semana processada; ver PARTE C).
 function initialDeficitHours(){const e=document.getElementById('inpInitialDeficit');const v=e?parseFloat(e.value):0;return v>0?v:0;}
 /* Período = "número de meses" SEGUIDOS a contar do "mês inicial". Tem de ser
-   sempre contíguo — é isso que dá sentido aos valores "prévios" do ponto 1
-   (défice inicial / horas E do DL119): aplicam-se sempre ao estado no
-   ÚLTIMO DIA DO MÊS ANTERIOR ao mês inicial, o que só é uma âncora coerente
+   sempre contíguo — é isso que dá sentido aos valores "prévios" (défice
+   inicial no ponto 2 / horas Extra do DL119 no ponto 3): aplicam-se sempre
+   ao estado no ÚLTIMO DIA DO MÊS ANTERIOR ao mês inicial, o que só é uma âncora coerente
    quando não há saltos entre os meses escolhidos. */
 function numMeses(){const e=document.getElementById('selNumMeses');const v=e?parseInt(e.value,10):1;return v>0?v:1;}
 function isSingleMonth(){return numMeses()===1;}
@@ -1009,7 +1012,7 @@ function initSelectors(){
 function onStartMonthChange(){ updatePeriodAvailability(); buildCalendar(); }
 function onNumMesesChange(){ updatePeriodAvailability(); buildCalendar(); }
 
-// Atualiza a etiqueta do "mês âncora" (ponto 1) e o hint do período.
+// Atualiza a etiqueta do "mês âncora" (pontos 2 e 3) e o hint do período.
 function updatePeriodAvailability(){
   const anchor=priorAnchorLabel();
   const l1=document.getElementById('priorMonthLabel1'); if(l1) l1.textContent=anchor;
@@ -1228,7 +1231,7 @@ function collectEntries(){
    PARTE F — CALCULAR + OUTPUTS
    ========================================================================= */
 function isDL119Enabled(){ const e=document.getElementById('chkDL119'); return !!(e&&e.checked); }
-// Horas Extra já realizadas fora do período aqui inserido (ver ponto 2) — soma-se
+// Horas Extra já realizadas fora do período aqui inserido (ver ponto 3) — soma-se
 // ao total do período para o limite anual do DL119 (250h/150h) ser avaliado
 // corretamente mesmo quando nem todos os meses do ano estão na ferramenta.
 function dl119PriorHours(){ const e=document.getElementById('inpDL119PriorHours'); const v=e?parseFloat(e.value):0; return v>0?v:0; }
@@ -1241,16 +1244,18 @@ function calculate(){
   const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
   meta.innerHTML='';
   renderValidation(result.warnings); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
-  // Atualiza a coluna "Semana" do calendário (ponto 3) com os totais agora calculados.
+  // Atualiza a coluna "Semana" do calendário (ponto 4) com os totais agora calculados.
   renderManualCalendar();
 
   const dl119Card=document.getElementById('dl119Card');
   const weekendRow=document.getElementById('dl119WeekendConfirmRow');
   const lastBlockRow=document.getElementById('dl119LastBlockRow');
+  const priorHoursRow=document.getElementById('dl119PriorHoursRow');
   if(isDL119Enabled()){
     if(lastBlockRow) lastBlockRow.style.display='';
+    if(priorHoursRow) priorHoursRow.style.display='';
     // Total anual = horas ER do(s) mês(es) aqui inseridos + horas já feitas
-    // antes (input manual, ponto 2) — precisa e não depende de o período
+    // antes (input manual, ponto 3) — precisa e não depende de o período
     // cobrir o ano inteiro.
     const priorH=dl119PriorHours();
     const limit=dl119AnnualLimit(ctx.regime);
@@ -1276,6 +1281,7 @@ function calculate(){
     if(dl119Card) dl119Card.style.display='block';
   } else {
     if(lastBlockRow) lastBlockRow.style.display='none';
+    if(priorHoursRow) priorHoursRow.style.display='none';
     if(weekendRow) weekendRow.style.display='none';
     if(dl119Card) dl119Card.style.display='none';
   }
@@ -1374,7 +1380,7 @@ function renderDL119(dl119, windows, priorH, erHoursYear){
   if(!dl119.applies){
     const lastBlockNote = dl119.isLastBlock
       ? ' Marcado como último bloco do ano, mas não há horas de excesso a pagar (0h).'
-      : ' Ainda não atinge o 1º bloco completo (48h) — só se aplica antes disso se esta escala for marcada como o último bloco autorizado do ano civil (ponto 1).';
+      : ' Ainda não atinge o 1º bloco completo (48h) — só se aplica antes disso se esta escala for marcada como o último bloco autorizado do ano civil (ponto 3).';
     sum.innerHTML=`<div class="alert ok">
       Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
       Excesso: <b>${dl119.excess.toFixed(1)} h</b> — não se aplica o incentivo.${lastBlockNote}</div>`;
@@ -1423,15 +1429,6 @@ function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício
   UI.lastResult.shifts.filter(s=>s.isER).forEach(s=>{const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
     L.push(`${formatPT(s.date)}\t${s.weekday}\t${s.start}\t${s.end}\t${(s.erDayH+s.erNightH).toFixed(2)}\t${s.tnH.toFixed(2)}\t${s.shiftEur.toFixed(2)}\t${c}`);});return L.join('\n');}
 function copyShifts(){copyToClipboard(shiftsToText(),'Detalhe copiado!');}
-function exportCSV(){
-  if(!UI.lastResult){toast('Calcule primeiro.',true);return;}
-  const sep=';';
-  const csv='Data;Dia;Inicio;Fim;TotalER;TN;Valor(EUR);Categorias\n'+UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
-      const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
-      return [formatPT(s.date),s.weekday,s.start,s.end,(s.erDayH+s.erNightH).toFixed(2),s.tnH.toFixed(2),s.shiftEur.toFixed(2),`"${c}"`].join(sep);}).join('\n');
-  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='detalhe_er_tn.csv';a.click();URL.revokeObjectURL(a.href);
-}
 
 /* ---- arranque ---- */
 initSelectors(); renderConfirmBanner(); buildCalendar();
