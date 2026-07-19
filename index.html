@@ -126,7 +126,12 @@
   .mcal .dnum{font-size:19px;font-weight:800;color:var(--text);text-align:center;margin-bottom:2px}
   .mcal td.fds .dnum{color:var(--h24)}
   .mcal select{width:100%;padding:6px 6px;font-size:14px;margin-top:5px}
-  .mcal select.banco{border-color:var(--day)}
+  .banco-toggles{display:flex;gap:4px;margin-top:5px}
+  .banco-btn{flex:1;padding:6px 0;font-size:13px;font-weight:800;border-radius:6px;cursor:pointer;
+    background:#0b1220;color:var(--muted);border:1.5px solid var(--line);transition:background .1s,color .1s,border-color .1s}
+  .banco-btn.banco-d.active{background:var(--day);border-color:var(--day);color:#06283b}
+  .banco-btn.banco-n.active{background:var(--night);border-color:var(--night);color:#fff}
+  .banco-btn:hover{border-color:var(--accent2)}
   .mcal td.weeksum{background:#0b1220;font-size:11px;line-height:1.6;vertical-align:middle}
   .mcal td.weeksum b{color:var(--text)}
   .mcal td.weeksum .muted{color:var(--muted)}
@@ -1510,8 +1515,15 @@ function renderManualCalendar(){
   const monthsPT=MONTHS_PT;
   const workOpts=(sel)=>['<option value="">—</option>'].concat(
     Object.entries(WORK_TYPES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.label} (${v.hours()}h)</option>`)).join('');
-  const bancoOpts=(sel)=>['<option value="">— banco —</option>'].concat(
-    Object.entries(BANCO_TYPES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.label}</option>`)).join('');
+  // Banco: D/N como ticks independentes (à semelhança do simulador DL119) em
+  // vez de droplist — D+N ativos em simultâneo = Banco 24h.
+  const bancoToggles=(date,sel)=>{
+    const isD=(sel==='dia'||sel==='h24'), isN=(sel==='noite'||sel==='h24');
+    return `<div class="banco-toggles" data-d="${date}">
+      <button type="button" class="banco-btn banco-d${isD?' active':''}" data-t="d" title="Banco Dia (08:00–20:00)">D</button>
+      <button type="button" class="banco-btn banco-n${isN?' active':''}" data-t="n" title="Banco Noite (20:00–08:00)">N</button>
+    </div>`;
+  };
 
   // blocos = exatamente os meses escolhidos (UI.periodRanges), na ordem em que já vêm (cronológica)
   const blocksMeta=UI.periodRanges;
@@ -1551,7 +1563,7 @@ function renderManualCalendar(){
           tds+=`<td class="${cls}" title="${kind==='holiday'?holidayName(date):''}">
             <div class="dnum">${parseISO(date).getDate()}${kind==='holiday'?' 🎌':''}</div>
             <select data-d="${date}" data-f="work">${workOpts(row.work)}</select>
-            <select class="banco" data-d="${date}" data-f="banco">${bancoOpts(row.banco)}</select></td>`;
+            ${bancoToggles(date,row.banco)}</td>`;
         }
         dd=addDays(dd,1);
       }
@@ -1566,6 +1578,16 @@ function renderManualCalendar(){
   host.querySelectorAll('select').forEach(el=>el.addEventListener('change',e=>{
     const date=e.target.dataset.d, f=e.target.dataset.f;
     if(UI.rowByDate[date]) UI.rowByDate[date][f]=e.target.value;
+  }));
+  host.querySelectorAll('.banco-btn').forEach(btn=>btn.addEventListener('click',e=>{
+    const wrap=btn.parentElement, date=wrap.dataset.d, type=btn.dataset.t;
+    const row=UI.rowByDate[date]; if(!row) return;
+    const isD=(row.banco==='dia'||row.banco==='h24'), isN=(row.banco==='noite'||row.banco==='h24');
+    const newD = type==='d' ? !isD : isD, newN = type==='n' ? !isN : isN;
+    row.banco = newD&&newN ? 'h24' : newD ? 'dia' : newN ? 'noite' : '';
+    btn.classList.toggle('active', type==='d'?newD:newN);
+    const other=wrap.querySelector(type==='d'?'.banco-n':'.banco-d');
+    if(other) other.classList.toggle('active', type==='d'?newN:newD);
   }));
 }
 
