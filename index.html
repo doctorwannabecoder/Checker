@@ -123,9 +123,9 @@
   .mcal th.weekcol,.mcal td.weeksum{border-left:2px solid var(--line)}
   .mcal td.out{background:#0d1526;opacity:.55}
   .mcal td.blank{background:#0b1220;border-color:#1e293b}
-  .mcal .dnum{font-size:12px;font-weight:700;color:var(--muted)}
+  .mcal .dnum{font-size:19px;font-weight:800;color:var(--text);text-align:center;margin-bottom:2px}
   .mcal td.fds .dnum{color:var(--h24)}
-  .mcal select{width:100%;padding:5px 6px;font-size:12px;margin-top:5px}
+  .mcal select{width:100%;padding:6px 6px;font-size:14px;margin-top:5px}
   .mcal select.banco{border-color:var(--day)}
   .mcal td.weeksum{background:#0b1220;font-size:11px;line-height:1.6;vertical-align:middle}
   .mcal td.weeksum b{color:var(--text)}
@@ -169,12 +169,8 @@
     </div>
     <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
       <label class="inline"><input type="checkbox" id="chkDL119" onchange="calculate()"/>
-        <span>Incentivo excecional <b>DL 119/2026</b> (horas ER além do limite legal anual)</span></label>
+        <span>Incentivo excecional <b>DL 119/2026</b> em curso (limite legal anual ultrapassado)</span></label>
       <span class="badge confirm">opcional · vários pontos por confirmar</span>
-    </div>
-    <div class="row" id="dl119PriorRow" style="margin-top:10px;display:none">
-      <label>Horas E já realizadas até final de <span id="priorMonthLabel2">—</span> <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">O DL119 conta o total ANUAL de horas ER. Se o período aqui inserido não cobrir o ano todo, indique aqui as horas ER já feitas até final do mês anterior ao mês inicial (ponto 2), para o limite (250h/150h) ser avaliado corretamente.</span></label>
     </div>
   </div>
 
@@ -184,16 +180,22 @@
     <div class="row">
       <label>Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
-      <label>Número de meses <select id="selNumMeses" onchange="onNumMesesChange()"></select></label>
       <button class="btn secondary" id="btnBuildCalendar">↻ Construir calendário</button>
     </div>
     <div class="row" style="margin-top:10px">
-      <label>Défice de horas inicial <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">Horas em falta transitadas até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span></label>
+      <label>Horas em défice (à data de início do mês) <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">À data de início de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span></label>
     </div>
-    <p class="small">Os meses são sempre <b>seguidos</b> a partir do mês inicial — é isso que permite ao défice
-      acima (e às horas E do DL119, no ponto 1) fazerem sentido: aplicam-se sempre ao estado no <b>último dia
-      do mês imediatamente anterior</b> ao mês inicial. <span id="periodHint"></span></p>
+    <div class="row" style="margin-top:10px">
+      <label>Horas E realizadas (à data de início do mês) <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">À data de início de <b id="priorMonthLabel2">—</b>. Usado para avaliar corretamente o limite anual do DL 119/2026 (250h/150h) quando ativo no ponto 1.</span></label>
+    </div>
+    <div class="row" id="dl119WeekendConfirmRow" style="margin-top:10px;display:none;border-top:1px solid var(--line);padding-top:10px">
+      <label class="inline"><input type="checkbox" id="chkDL119WeekendConfirm" onchange="toggleDL119WeekendConfirm()"/>
+        <span>Houve pelo menos <b>48h de banco ao fim de semana</b> nas últimas 8 semanas?</span></label>
+      <span class="badge confirm">confirmar</span>
+    </div>
+    <p class="small">Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas. <span id="periodHint"></span></p>
   </div>
 
   <!-- 3 · entrada -->
@@ -797,7 +799,8 @@ function computeMonth(entries, ctx){
     weeklyStats.push({week:wk, monday:mondayOfWeek(days[0].date), sunday:sundayOfWeek(days[0].date),
       target:round2(weekTarget), deficitIn:round2(deficitIn), workedH:round2(workedH),
       tnH:round2(tnH), erH:round2(erH), eur:round2(weekEur), deficitOut:round2(deficitOut),
-      weekendBancoH:round2(weekendBancoH)});
+      weekendBancoH:round2(weekendBancoH),
+      overLimit:(weekTotals[wk]||0)>PAYROLL_RULES.limits.maxWeeklyHours});
     carryDeficit=deficitOut;
   });
   Object.entries(weekTotals).forEach(([wk,h])=>{
@@ -1132,7 +1135,7 @@ function structurePdf(frags){
 /* =========================================================================
    PARTE E — UI: estado + seletores + grelha
    ========================================================================= */
-let UI = { inputMode:'manual', manualRows:[], gridRows:[], lastResult:null, name:'', dl119MajBlocks:new Set() };
+let UI = { inputMode:'manual', manualRows:[], gridRows:[], lastResult:null, name:'', dl119MajBlocks:new Set(), dl119WeekendConfirmed:false };
 let PDF_DATA=null;     // resultado de structurePdf()
 let PDF_LEGEND={};     // legenda lida do PDF (código -> {start,end,hours,worked})
 
@@ -1231,9 +1234,6 @@ function initSelectors(){
   const now=new Date();
   sm.value=now.getMonth()+1;
   document.getElementById('selStartYear').value=now.getFullYear();
-  const sn=document.getElementById('selNumMeses');
-  let numOpts=''; for(let n=1;n<=12;n++) numOpts+=`<option value="${n}" ${n===1?'selected':''}>${n}</option>`;
-  sn.innerHTML=numOpts;
   const sb=document.getElementById('selWeeklyBase');
   sb.innerHTML=[40,42].map(h=>`<option value="${h}" ${h===40?'selected':''}>${h} h/semana</option>`).join('');
   let red=''; for(let r=0;r<=7;r++)red+=`<option value="${r}">${r===0?'sem redução':('−'+r+' h')}</option>`;
@@ -1266,10 +1266,7 @@ function updatePeriodAvailability(){
   const l1=document.getElementById('priorMonthLabel1'); if(l1) l1.textContent=anchor;
   const l2=document.getElementById('priorMonthLabel2'); if(l2) l2.textContent=anchor;
   const el=document.getElementById('periodHint'); if(!el) return;
-  const n=numMeses();
-  el.textContent = single
-    ? `1 mês + dias das semanas de fronteira nas duas pontas.`
-    : `${n} meses seguidos + dias de fronteira nas duas pontas. PDF só disponível com 1 mês.`;
+  el.textContent = '';
 }
 function updateWeeklyHint(){
   const base=weeklyBase(), red=weeklyReduction(), eff=currentWeekly();
@@ -1357,7 +1354,7 @@ function buildGridFromPdf(emp){
   // PDF é sempre 1 mês -> sincroniza o mês inicial e força número de meses = 1.
   document.getElementById('selStartMonth').value=m;
   document.getElementById('selStartYear').value=y;
-  document.getElementById('selNumMeses').value='1';
+  const sn=document.getElementById('selNumMeses'); if(sn) sn.value='1';
   updatePeriodAvailability();
   updateWeeklyHint();
   UI.name=emp.name; UI.inputMode='paste';
@@ -1448,8 +1445,13 @@ function weekSummaryCellHtml(weekMonday){
   const stats=UI.lastResult && UI.lastResult.weeklyStats;
   const w=stats && stats.find(x=>x.monday===weekMonday);
   if(!w) return `<span class="muted">— calcule para ver —</span>`;
+  const wNum=w.week?w.week.split('-W')[1]:'';
+  const weekLabel = w.overLimit
+    ? `<span class="badge" style="border-color:var(--err);color:#fecaca">⚠️ Semana ${wNum}</span>`
+    : `<span class="small muted">Semana ${wNum}</span>`;
   const defBadge=w.deficitOut>0 ? `<span class="badge missing">−${w.deficitOut.toFixed(1)}h défice</span>` : '';
-  return `<div>Trabalhadas: <b>${w.workedH.toFixed(1)}h</b></div>
+  return `<div>${weekLabel}</div>
+    <div>Trabalhadas: <b>${w.workedH.toFixed(1)}h</b></div>
     <div>TN: <b>${w.tnH.toFixed(1)}h</b> · ER: <b>${w.erH.toFixed(1)}h</b></div>
     <div>Extra: <b>${eur(w.eur)}</b></div>
     ${defBadge}`;
@@ -1647,23 +1649,41 @@ function calculate(){
   if(UI.inputMode==='manual') renderManualCalendar();
 
   const dl119Card=document.getElementById('dl119Card');
-  const priorRow=document.getElementById('dl119PriorRow');
+  const weekendRow=document.getElementById('dl119WeekendConfirmRow');
   if(isDL119Enabled()){
-    if(priorRow) priorRow.style.display='';
     // Total anual = horas ER do(s) mês(es) aqui inseridos + horas já feitas
-    // antes (input manual) — precisa e não depende de o período cobrir o
-    // ano inteiro (ver ponto "Horas E já realizadas antes deste período").
+    // antes (input manual, ponto 2) — precisa e não depende de o período
+    // cobrir o ano inteiro.
     const priorH=dl119PriorHours();
+    const limit=dl119AnnualLimit(ctx.regime);
+    // Só faz sentido perguntar pela condição de fim de semana (Art.5º) quando
+    // as horas E já realizadas antes deste mês já ultrapassam o limite anual
+    // do regime — só nesse caso a majoração pode estar em jogo.
+    const showWeekendToggle = priorH>limit;
+    if(weekendRow) weekendRow.style.display = showWeekendToggle ? '' : 'none';
+    if(!showWeekendToggle && UI.dl119WeekendConfirmed){
+      UI.dl119WeekendConfirmed=false;
+      const wcb=document.getElementById('chkDL119WeekendConfirm'); if(wcb) wcb.checked=false;
+    }
     const erHoursYear=round2((result.totalErHours||0)+priorH);
     const dctx={regime:ctx.regime, hourly:ctx.hourly, erEurTotal:result.erEur, erHoursTotal:result.totalErHours};
-    const dl119=computeDL119(erHoursYear, dctx, UI.dl119MajBlocks);
+    // Confirmação global (fim de semana, últimas 8 semanas) sobrepõe-se à
+    // confirmação manual por bloco: se confirmada, todos os blocos usam a
+    // tabela majorada (Art.5º).
+    const majBlocksToUse = UI.dl119WeekendConfirmed ? {has:()=>true} : UI.dl119MajBlocks;
+    const dl119=computeDL119(erHoursYear, dctx, majBlocksToUse);
     const windows=dl119WeekendWindows(result.weeklyStats);
     renderDL119(dl119, windows, priorH, erHoursYear);
     if(dl119Card) dl119Card.style.display='block';
   } else {
-    if(priorRow) priorRow.style.display='none';
+    if(weekendRow) weekendRow.style.display='none';
     if(dl119Card) dl119Card.style.display='none';
   }
+}
+function toggleDL119WeekendConfirm(){
+  const e=document.getElementById('chkDL119WeekendConfirm');
+  UI.dl119WeekendConfirmed=!!(e&&e.checked);
+  calculate();
 }
 function renderValidation(warnings){
   document.getElementById('validationCard').style.display='block';
