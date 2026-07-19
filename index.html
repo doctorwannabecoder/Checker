@@ -192,12 +192,12 @@
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
     </div>
     <div class="row" style="margin-top:10px">
-      <label>Horas em défice (à data de início do mês) <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">À data de início de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span></label>
+      <label>Horas em défice (até ao fim do mês anterior) <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span></label>
     </div>
     <div class="row" style="margin-top:10px">
-      <label>Horas E realizadas (à data de início do mês) <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/></label>
-      <label class="inline" style="margin-bottom:6px"><span class="small">À data de início de <b id="priorMonthLabel2">—</b>. Usado para avaliar corretamente o limite anual do DL 119/2026 (250h/150h) quando ativo no ponto 1.</span></label>
+      <label>Horas E realizadas (até ao fim do mês anterior) <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/></label>
+      <label class="inline" style="margin-bottom:6px"><span class="small">Até ao fim de <b id="priorMonthLabel2">—</b>. Usado para avaliar corretamente o limite anual do DL 119/2026 (250h/150h) quando ativo no ponto 1.</span></label>
     </div>
     <div class="row" id="dl119WeekendConfirmRow" style="margin-top:10px;display:none;border-top:1px solid var(--line);padding-top:10px">
       <label class="inline"><input type="checkbox" id="chkDL119WeekendConfirm" onchange="toggleDL119WeekendConfirm()"/>
