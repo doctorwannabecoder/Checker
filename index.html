@@ -172,6 +172,11 @@
         <span>Incentivo excecional <b>DL 119/2026</b> em curso (limite legal anual ultrapassado)</span></label>
       <span class="badge confirm">opcional · vários pontos por confirmar</span>
     </div>
+    <div class="row" id="dl119LastBlockRow" style="margin-top:10px;display:none">
+      <label class="inline"><input type="checkbox" id="chkDL119LastBlock" onchange="calculate()"/>
+        <span>Considerar esta escala como o <b>último bloco autorizado do ano civil</b> (pagamento proporcional abaixo de 48h — Art.4º/4)</span></label>
+      <span class="badge confirm">confirmar</span>
+    </div>
   </div>
 
   <!-- 2 · período -->
@@ -833,49 +838,81 @@ function dl119WeekendWindows(weeklyStats){
   });
 }
 
-/* Calcula o incentivo DL119 a partir de um total de horas ER (anual real, ou
-   projeção mensal×12) e do contexto salarial. `majBlocks` = Set opcional com
-   os números de bloco confirmados manualmente como majorados (Art.5º/2-3). */
-function computeDL119(totalErHoursYear, ctx, majBlocks){
-  majBlocks = majBlocks || new Set();
-  const limit = dl119AnnualLimit(ctx.regime);
-  const excess = Math.max(0, round2(totalErHoursYear - limit));
-  const result = { limit, excess, applies:false, blocks:[], incentiveEur:0,
-    requalifiedHours:0, requalifiedEurAt1x:0, clawbackEur:0, netAdjustmentEur:0 };
-  if (excess < DL119_RULES.blockHours) return result;   // Art.4º/3 — só conta a partir do 1º bloco completo
-  result.applies = true;
-
+// Constrói os blocos de 48h (Art.4º/3) a partir de um total de horas-excesso.
+// `allowPartialLast` = true permite um bloco final PROPORCIONAL mesmo com
+// menos de 48h (Art.4º/4 — "último bloco autorizado do ano civil").
+function dl119BuildBlocks(excessHours, majBlocks, allowPartialLast){
+  const out = { blocks:[], premium:0 };
+  if (excessHours<=0) return out;
+  if (excessHours < DL119_RULES.blockHours && !allowPartialLast) return out;
   const vencimentoBase = currentMonthlyBase();
-  const completedBlocks = Math.floor(excess / DL119_RULES.blockHours);
-  const remainder = round2(excess - completedBlocks*DL119_RULES.blockHours);
-
+  const completedBlocks = Math.floor(excessHours / DL119_RULES.blockHours);
+  const remainder = round2(excessHours - completedBlocks*DL119_RULES.blockHours);
   for (let n=1; n<=completedBlocks; n++){
     const majorado = majBlocks.has(n);
     const pct = dl119BlockPct(n, majorado);
     const value = round2(pct/100 * vencimentoBase);
-    result.blocks.push({n, hours:DL119_RULES.blockHours, pct, majorado, value, partial:false});
-    result.incentiveEur += value;
+    out.blocks.push({n, hours:DL119_RULES.blockHours, pct, majorado, value, partial:false});
+    out.premium += value;
   }
   if (remainder > 0){
     const n = completedBlocks+1;
     const majorado = majBlocks.has(n);
     const pct = dl119BlockPct(n, majorado);
     const value = round2((pct/100 * vencimentoBase / DL119_RULES.blockHours) * remainder);
-    result.blocks.push({n, hours:remainder, pct, majorado, value, partial:true});
-    result.incentiveEur += value;
+    out.blocks.push({n, hours:remainder, pct, majorado, value, partial:true});
+    out.premium += value;
   }
-  result.incentiveEur = round2(result.incentiveEur);
+  out.premium = round2(out.premium);
+  return out;
+}
+
+/* Calcula o incentivo DL119 a partir de um total de horas ER (anual real, ou
+   projeção mensal×12) e do contexto salarial. `majBlocks` = Set opcional com
+   os números de bloco confirmados manualmente como majorados (Art.5º/2-3).
+   `opts.priorHours` = horas E já realizadas ANTES deste período (ponto 2) —
+   usado para isolar o incentivo NOVO deste período, subtraindo o que já
+   tinha sido "ganho" (e presumivelmente pago) em períodos anteriores, para
+   não duplicar o valor de blocos já liquidados noutros recibos.
+   `opts.isLastBlock` = true ativa o pagamento proporcional do bloco final
+   mesmo com menos de 48h de excesso (Art.4º/4). */
+function computeDL119(totalErHoursYear, ctx, majBlocks, opts){
+  majBlocks = majBlocks || new Set();
+  opts = opts || {};
+  const isLastBlock = !!opts.isLastBlock;
+  const priorHours = opts.priorHours || 0;
+  const limit = dl119AnnualLimit(ctx.regime);
+  const excess = Math.max(0, round2(totalErHoursYear - limit));
+  const priorExcess = Math.max(0, round2(priorHours - limit));
+  const result = { limit, excess, applies:false, blocks:[], incentiveEur:0,
+    priorIncentiveEur:0, netIncentiveEur:0, isLastBlock,
+    requalifiedHours:0, requalifiedEurAt1x:0, clawbackEur:0, netAdjustmentEur:0 };
+
+  const totalCalc = dl119BuildBlocks(excess, majBlocks, isLastBlock);
+  if (!totalCalc.blocks.length) return result;   // Art.4º/3 — abaixo do 1º bloco completo (e não é o último do ano)
+  result.applies = true;
+  result.blocks = totalCalc.blocks;
+  result.incentiveEur = totalCalc.premium;   // valor total acumulado (histórico, ano civil)
+
+  // Parte já correspondente a horas anteriores a este período — subtrai-se
+  // para isolar só o incentivo NOVO gerado pelas horas deste mês (evita
+  // voltar a somar blocos já pagos em recibos anteriores). O "último bloco"
+  // só pode ser decidido no período em que a escala realmente termina, por
+  // isso o cálculo do que já era "prévio" nunca assume pagamento proporcional.
+  const priorCalc = dl119BuildBlocks(priorExcess, majBlocks, false);
+  result.priorIncentiveEur = priorCalc.premium;
+  result.netIncentiveEur = round2(result.incentiveEur - result.priorIncentiveEur);
 
   // Requalificação (Art.4º/6): as horas dentro de blocos completos/parciais
   // deixam de valer o multiplicador ER normal e passam a 1×R simples.
   // Para "descontar" o valor que já tinham sido calculadas ao preço ER normal,
   // usa-se o €/hora médio do ER do período (aproximação — a ferramenta não
   // atribui os blocos a turnos concretos, só ao total anual).
-  result.requalifiedHours = round2(completedBlocks*DL119_RULES.blockHours + remainder);
+  result.requalifiedHours = round2(result.blocks.reduce((s,b)=>s+b.hours,0));
   result.requalifiedEurAt1x = round2(result.requalifiedHours * (ctx.hourly||0));
   const avgErRate = (ctx.erEurTotal && ctx.erHoursTotal) ? (ctx.erEurTotal/ctx.erHoursTotal) : (ctx.hourly||0);
   result.clawbackEur = round2(result.requalifiedHours * avgErRate);   // valor ER original (aprox.) a retirar
-  result.netAdjustmentEur = round2(result.requalifiedEurAt1x - result.clawbackEur + result.incentiveEur);
+  result.netAdjustmentEur = round2(result.requalifiedEurAt1x - result.clawbackEur + result.netIncentiveEur);
   return result;
 }
 
@@ -1650,7 +1687,9 @@ function calculate(){
 
   const dl119Card=document.getElementById('dl119Card');
   const weekendRow=document.getElementById('dl119WeekendConfirmRow');
+  const lastBlockRow=document.getElementById('dl119LastBlockRow');
   if(isDL119Enabled()){
+    if(lastBlockRow) lastBlockRow.style.display='';
     // Total anual = horas ER do(s) mês(es) aqui inseridos + horas já feitas
     // antes (input manual, ponto 2) — precisa e não depende de o período
     // cobrir o ano inteiro.
@@ -1665,17 +1704,19 @@ function calculate(){
       UI.dl119WeekendConfirmed=false;
       const wcb=document.getElementById('chkDL119WeekendConfirm'); if(wcb) wcb.checked=false;
     }
+    const isLastBlock=!!(document.getElementById('chkDL119LastBlock')||{}).checked;
     const erHoursYear=round2((result.totalErHours||0)+priorH);
     const dctx={regime:ctx.regime, hourly:ctx.hourly, erEurTotal:result.erEur, erHoursTotal:result.totalErHours};
     // Confirmação global (fim de semana, últimas 8 semanas) sobrepõe-se à
     // confirmação manual por bloco: se confirmada, todos os blocos usam a
     // tabela majorada (Art.5º).
     const majBlocksToUse = UI.dl119WeekendConfirmed ? {has:()=>true} : UI.dl119MajBlocks;
-    const dl119=computeDL119(erHoursYear, dctx, majBlocksToUse);
+    const dl119=computeDL119(erHoursYear, dctx, majBlocksToUse, {priorHours:priorH, isLastBlock});
     const windows=dl119WeekendWindows(result.weeklyStats);
     renderDL119(dl119, windows, priorH, erHoursYear);
     if(dl119Card) dl119Card.style.display='block';
   } else {
+    if(lastBlockRow) lastBlockRow.style.display='none';
     if(weekendRow) weekendRow.style.display='none';
     if(dl119Card) dl119Card.style.display='none';
   }
@@ -1773,18 +1814,23 @@ function renderDL119(dl119, windows, priorH, erHoursYear){
   const sum=document.getElementById('dl119Summary');
   const label = priorH>0 ? `período inserido + ${priorH.toFixed(1)}h já feitas antes` : 'período inserido';
   if(!dl119.applies){
+    const lastBlockNote = dl119.isLastBlock
+      ? ' Marcado como último bloco do ano, mas não há horas de excesso a pagar (0h).'
+      : ' Ainda não atinge o 1º bloco completo (48h) — só se aplica antes disso se esta escala for marcada como o último bloco autorizado do ano civil (ponto 1).';
     sum.innerHTML=`<div class="alert ok">
       Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
-      Excesso: <b>${dl119.excess.toFixed(1)} h</b> — ainda não atinge o 1º bloco completo (48h), não se aplica o incentivo.</div>`;
+      Excesso: <b>${dl119.excess.toFixed(1)} h</b> — não se aplica o incentivo.${lastBlockNote}</div>`;
     document.querySelector('#dl119BlocksTable tbody').innerHTML=`<tr><td colspan="5" class="muted">Sem blocos.</td></tr>`;
     document.querySelector('#dl119BlocksTable tfoot').innerHTML='';
     document.querySelector('#dl119WeeksTable tbody').innerHTML='';
     return;
   }
+  const lastBlockBadge = dl119.isLastBlock ? ` <span class="badge code">último bloco do ano · pagamento proporcional</span>` : '';
   sum.innerHTML=`<div class="alert warn">
     Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
-    Excesso: <b>${dl119.excess.toFixed(1)} h</b> · Horas requalificadas (1×€/h, sem multiplicador ER): <b>${dl119.requalifiedHours.toFixed(1)} h</b><br>
-    <span class="small">Ajuste líquido aproximado: ${eur(dl119.requalifiedEurAt1x)} (1×) − ${eur(dl119.clawbackEur)} (retira valor ER já calculado ao preço normal, aproximado pela média €/h ER do período) + ${eur(dl119.incentiveEur)} (incentivo DL119) = <b>${eur(dl119.netAdjustmentEur)}</b></span></div>`;
+    Excesso: <b>${dl119.excess.toFixed(1)} h</b> · Horas requalificadas (1×€/h, sem multiplicador ER): <b>${dl119.requalifiedHours.toFixed(1)} h</b>${lastBlockBadge}<br>
+    <span class="small">Incentivo acumulado (ano civil, todos os blocos): ${eur(dl119.incentiveEur)} − já correspondente a períodos anteriores: ${eur(dl119.priorIncentiveEur)} = <b>incentivo novo deste período: ${eur(dl119.netIncentiveEur)}</b></span><br>
+    <span class="small">Ajuste líquido aproximado deste período: ${eur(dl119.requalifiedEurAt1x)} (1×) − ${eur(dl119.clawbackEur)} (retira valor ER já calculado ao preço normal, aproximado pela média €/h ER do período) + ${eur(dl119.netIncentiveEur)} (incentivo novo) = <b>${eur(dl119.netAdjustmentEur)}</b></span></div>`;
 
   const tb=document.querySelector('#dl119BlocksTable tbody'), tf=document.querySelector('#dl119BlocksTable tfoot');
   tb.innerHTML=dl119.blocks.map(b=>`<tr>
@@ -1793,7 +1839,9 @@ function renderDL119(dl119, windows, priorH, erHoursYear){
     <td class="num">${b.pct.toFixed(2)}%</td>
     <td class="center"><input type="checkbox" data-blockn="${b.n}" ${b.majorado?'checked':''} onchange="toggleDL119Block(${b.n})"></td>
     <td class="num">${eur(b.value)}</td></tr>`).join('');
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="4">TOTAL INCENTIVO DL119</td><td class="num">${eur(dl119.incentiveEur)}</td></tr>`;
+  tf.innerHTML=`<tr style="background:#0b1220"><td colspan="4">Total acumulado (ano civil)</td><td class="num">${eur(dl119.incentiveEur)}</td></tr>`+
+    (dl119.priorIncentiveEur>0?`<tr><td colspan="4" class="small">− já correspondente a períodos anteriores</td><td class="num">${eur(dl119.priorIncentiveEur)}</td></tr>`:'')+
+    `<tr style="font-weight:700;background:#0b1220"><td colspan="4">INCENTIVO NOVO DESTE PERÍODO</td><td class="num">${eur(dl119.netIncentiveEur)}</td></tr>`;
 
   const wtb=document.querySelector('#dl119WeeksTable tbody');
   wtb.innerHTML=windows.map(w=>`<tr class="${w.qualifies?'':'muted'}">
