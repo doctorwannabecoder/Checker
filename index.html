@@ -204,7 +204,7 @@
     <div class="row">
       <label class="inline"><input type="checkbox" id="chkDL119" onchange="calculate()"/>
         <span>Incentivo excecional <b>DL 119/2026</b> em curso (limite legal anual ultrapassado)</span></label>
-      <span class="badge confirm">opcional · vários pontos por confirmar</span>
+      <span class="badge">opcional</span>
     </div>
     <div class="row" id="dl119PriorHoursRow" style="margin-top:10px;display:none">
       <label>Horas Extra realizadas (até ao fim do mês anterior)
@@ -277,12 +277,13 @@
 
   <!-- OUTPUT 4 · DL 119/2026 (opcional) -->
   <div id="dl119Card" class="card" style="display:none">
-    <h2>Output 4 · Incentivo excecional DL 119/2026 <span class="badge confirm">vários pontos por confirmar</span></h2>
+    <h2>Output 4 · Incentivo excecional DL 119/2026</h2>
     <p class="small">Só se aplica a partir de um <b>bloco completo (48h)</b> de excesso sobre o limite legal anual
       (250h dedicação plena · 150h restantes regimes). Abaixo disso, as horas mantêm-se como ER normal.
       A partir daí, essas horas passam a valer <b>1×€/hora simples</b> (sem multiplicador) + o valor do bloco —
       não é cumulativo com o ER normal (Art.º 4º/6). O incentivo <b>não</b> conta para o vencimento base
-      nem para outros suplementos (Art.º 7º), por isso é sempre uma linha à parte.</p>
+      nem para outros suplementos (Art.º 7º), por isso é sempre uma linha à parte. O "ajuste líquido" usa o
+      €/hora médio do ER do período como aproximação (a ferramenta não atribui os blocos a turnos concretos).</p>
     <div id="dl119Summary"></div>
     <div style="overflow-x:auto">
       <table id="dl119BlocksTable">
@@ -293,9 +294,9 @@
     </div>
     <details style="margin-top:10px">
       <summary>Condição de majoração (Art.5º) — semanas com ≥48h ao Sáb/Dom (janela deslizante, últimas 8 semanas)</summary>
-      <p class="small">A majoração também exige o médico disponibilizar-se para um novo bloco de 48h — isso é uma
-        declaração administrativa que a ferramenta não consegue ler do calendário; confirme manualmente por
-        bloco, na coluna acima, apenas quando souber que essa disponibilização foi feita e aceite.</p>
+      <p class="small">A declaração de disponibilidade para um novo bloco, também exigida por lei, não é avaliada
+        por esta ferramenta (considera-se sempre feita) — confirme por bloco, na coluna acima, apenas com base
+        na condição de horas de fim de semana.</p>
       <div style="overflow-x:auto"><table id="dl119WeeksTable">
         <thead><tr><th>Semana</th><th class="num">Horas Sáb/Dom na janela</th><th>Condição (≥48h)</th></tr></thead>
         <tbody></tbody>
@@ -346,7 +347,6 @@ const PAYROLL_RULES = {
   saturdaySplitHour: { hour: 13, confirm:false },
   // "1ª hora": duração (min) que bilha sob o código "1ª"; o resto do turno bilha sob "seguintes".
   firstHourMinutes: { minutes: 60, confirm:false },
-  limits: { maxDailyHours:24, maxWeeklyHours:48, confirm:true },
 
   /* CATEGORIAS DE PAGAMENTO — key -> {code, desc, isER, isTN, confirm}
      `code` = etiqueta curta (mostrada na coluna "Categoria"); `desc` = descrição completa. */
@@ -445,25 +445,28 @@ const REGIME_LABELS = { geral:'Geral', plena:'Dedicação plena', exclusiva:'Ded
      horas só entram neste regime a partir do bloco completo (48h de
      excesso); abaixo disso mantêm o ER normal. A partir daí, essas horas
      passam a valer 1×R simples (sem multiplicador ER) + o valor do bloco.
-   • Art.5º: majoração — tabela alternativa (~×1,2), condicional a (a) ≥48h
+   • Art.5º: majoração — tabela alternativa (×1,2), condicional a (a) ≥48h
      de trabalho ao Sáb/Dom nas ÚLTIMAS 8 semanas (janela deslizante,
      CONFIRMADO PELO UTILIZADOR) e (b) o médico disponibilizar-se para um
-     novo bloco de 48h — (b) é uma declaração administrativa, não é
-     detetável a partir do calendário, por isso fica como confirmação
-     manual por bloco.
+     novo bloco de 48h — (b) é uma declaração administrativa não detetável
+     a partir do calendário; POR DECISÃO DO UTILIZADOR, esta ferramenta
+     considera-a sempre feita e não a avalia — a majoração aplica-se
+     unicamente com base na condição (a).
    • Art.7º: o incentivo NÃO conta para o vencimento base nem para outros
      suplementos — por isso fica sempre como linha própria, nunca somado
      ao ×14 anual nem a outros cálculos. */
 const DL119_RULES = {
   enabled: false,           // toggle — controlado pela checkbox #chkDL119
   blockHours: 48,
-  annualLimit: { plena: 250, outros: 150, confirm:true },  // mapeamento regime->limiar
+  annualLimit: { plena: 250, outros: 150 },  // CONFIRMADO: 150h Geral/Exclusiva, 250h Dedicação Plena
   // tabela base (Art.4º/3) — percentagem do vencimento base mensal, por bloco de 48h
   baseTable: [
     {n:1,  pct:45.0},
     {n:2,  pct:47.5},
     {n:3,  pct:50.0},
-    {n:4,  pct:52.5, original:42.5, confirm:true}, // ver nota acima
+    // CONFIRMADO: o decreto imprimiu 42,5% por lapso, corrigido posteriormente
+    // para 52,5% (também consistente com a tabela majorada = base×1,2 em todos os blocos).
+    {n:4,  pct:52.5},
     {n:5,  pct:56.0},
     {n:6,  pct:59.5},
     {n:7,  pct:63.0},
@@ -472,7 +475,9 @@ const DL119_RULES = {
     {n:10, pct:85.5}  // "10.º bloco e seguintes" — blocos >10 usam este valor
   ],
   // tabela majorada (Art.5º) — aplica-se quando confirmada a condição de fim de semana
-  // E o médico se disponibiliza para um novo bloco (confirmação manual)
+  // (≥48h Sáb/Dom na janela deslizante de 8 semanas). A declaração de
+  // disponibilidade para um novo bloco, também exigida por lei, não é
+  // avaliada por esta ferramenta — considera-se sempre feita.
   majTable: [
     {n:1,  pct:54.0},
     {n:2,  pct:57.0},
@@ -644,8 +649,6 @@ function computeEntry(entry, ctx, contractRem){
     else if((startMin==null)!==(endMin==null))
       warnings.push({type:'err',msg:`${date}: falta a hora de ${startMin==null?'início':'fim'}.`});
   }
-  if(durMin!=null && durMin>PAYROLL_RULES.limits.maxDailyHours*60)
-    warnings.push({type:'err',msg:`${date}: duração ${(durMin/60).toFixed(1)}h excede o máximo diário (${PAYROLL_RULES.limits.maxDailyHours}h).`});
 
   const hourly=ctx.hourly||0;
   let totalH=durMin>0?durMin/60:0, tnH=0, erDayH=0, erNightH=0, contractDayH=0, erEur=0, tnEur=0;
@@ -710,7 +713,7 @@ function computeEntry(entry, ctx, contractRem){
 }
 
 function computeMonth(entries, ctx){
-  const shifts=[], warnings=[], summaryMap={}, weekTotals={}, weeklyStats=[];
+  const shifts=[], warnings=[], summaryMap={}, weeklyStats=[];
   function ensure(a){
     if(!summaryMap[a.key]) summaryMap[a.key]={key:a.key,code:a.code,desc:a.desc,isER:a.isER,isTN:a.isTN,confirm:a.confirm,mult:a.mult,hours:0,eur:0};
     return summaryMap[a.key];
@@ -754,8 +757,6 @@ function computeMonth(entries, ctx){
     for(const e of days){
       const r=computeEntry(e, ctx, contractRem);
       contractRem=r.contractRemAfter;
-      const dayHours=r.allocations.filter(a=>!a.isTN).reduce((s,a)=>s+a.hours,0);
-      weekTotals[wk]=(weekTotals[wk]||0)+dayHours;
       // estatística semanal: usa TODOS os dias da semana (incl. fronteira),
       // para uma avaliação íntegra do cálculo — independente do resumo mensal.
       const regHDay=(r.allocations.find(a=>a.key==='RW')||{hours:0}).hours;
@@ -777,13 +778,8 @@ function computeMonth(entries, ctx){
     weeklyStats.push({week:wk, monday:mondayOfWeek(days[0].date), sunday:sundayOfWeek(days[0].date),
       target:round2(weekTarget), deficitIn:round2(deficitIn), workedH:round2(workedH),
       tnH:round2(tnH), erH:round2(erH), eur:round2(weekEur), deficitOut:round2(deficitOut),
-      weekendBancoH:round2(weekendBancoH),
-      overLimit:(weekTotals[wk]||0)>PAYROLL_RULES.limits.maxWeeklyHours});
+      weekendBancoH:round2(weekendBancoH)});
     carryDeficit=deficitOut;
-  });
-  Object.entries(weekTotals).forEach(([wk,h])=>{
-    if(h>PAYROLL_RULES.limits.maxWeeklyHours)
-      warnings.push({type:'warn',msg:`Semana ${wk}: ${round2(h)}h totais excedem o teto semanal (${PAYROLL_RULES.limits.maxWeeklyHours}h). [confirmar]`});
   });
   const summary=Object.values(summaryMap).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   const erEur=round2(shifts.reduce((s,r)=>s+(r.erEur||0),0));
@@ -1091,11 +1087,8 @@ function weekSummaryCellHtml(weekMonday){
   const w=stats && stats.find(x=>x.monday===weekMonday);
   if(!w) return `<span class="muted">— calcule para ver —</span>`;
   const wNum=w.week?w.week.split('-W')[1]:'';
-  const weekLabel = w.overLimit
-    ? `<span class="badge" style="border-color:var(--err);color:#fecaca">⚠️ Semana ${wNum}</span>`
-    : `<span class="small muted">Semana ${wNum}</span>`;
   const defBadge=w.deficitOut>0 ? `<span class="badge missing">−${w.deficitOut.toFixed(1)}h défice</span>` : '';
-  return `<div>${weekLabel}</div>
+  return `<div><span class="small muted">Semana ${wNum}</span></div>
     <div>Trabalhadas: <b>${w.workedH.toFixed(1)}h</b></div>
     <div>TN: <b>${w.tnH.toFixed(1)}h</b> · ER: <b>${w.erH.toFixed(1)}h</b></div>
     <div>Extra: <b>${eur(w.eur)}</b></div>
