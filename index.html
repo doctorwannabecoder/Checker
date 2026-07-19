@@ -20,15 +20,14 @@
     * Reutilizou-se VERBATIM a lógica de datas/feriados do scheduler:
         iso, parseISO, addDays, easterSunday, holidaysForYear, isHoliday,
         holidayName, dayKind, isoWeekKey, PT_HOLIDAYS_FIXED.
-    * Todas as regras de PAGAMENTO vivem em PAYROLL_RULES / CODE_MATRIX /
-      SHIFT_CODE_MAP (topo do <script>). O que não foi confirmado está com
-      `confirm:true` e aparece assinalado na UI.
+    * Todas as regras de PAGAMENTO vivem em PAYROLL_RULES / CODE_MATRIX
+      (topo do <script>). O que não foi confirmado está com `confirm:true`
+      e aparece assinalado na UI.
     * Não se usam números de código de recibo (ex.: 700.001) — cada categoria
       de pagamento tem só um NOME (ex.: "DU · Diu · 1ª hora"), que chega para
       comparar horas/valores com o recibo visualmente.
 
-  ENTRADA: importação de PDF do horário (SISQUAL/PDFsharp) — ver PARTE D — ou
-  inserção manual num calendário (semanas na horizontal, Segunda–Domingo).
+  ENTRADA: inserção manual num calendário (semanas na horizontal, Segunda–Domingo).
 
   SEMANA COMPLETA: para ER/TN semanais, o cálculo estende cada semana de
   fronteira (Seg–Dom), nas duas pontas do período. Dias úteis sem turno/
@@ -224,52 +223,11 @@
   <!-- 3 · entrada -->
   <div class="card">
     <h2>3 · Entrada</h2>
-    <div class="tabs">
-      <button id="tabManual" class="active" onclick="switchInputTab('manual')">✍️ Inserção manual</button>
-      <button id="tabPaste" onclick="switchInputTab('paste')">📄 Importar PDF</button>
-    </div>
-
-    <!-- MANUAL (predefinição) — calendário: semanas na horizontal -->
-    <div id="paneManual" class="pane active">
-      <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> (R Rotina · T Tarde · A Alternativo · F Folga · BH Bolsa de Horas) e
-        <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
-        dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de
-        <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
-      <div id="manualCal" style="overflow-x:auto"></div>
-    </div>
-
-    <!-- PDF (só em modo mensal) -->
-    <div id="panePaste" class="pane">
-      <p class="small">Importa automaticamente a legenda e as 3 secções (Rotina / Urgência Externa / Prevenção)
-        de um PDF do horário. Só funciona com PDFs de <b>texto</b> (SISQUAL/PDFsharp), não com digitalizações.</p>
-      <div class="row">
-        <label class="btn" style="cursor:pointer">📂 Escolher PDF…
-          <input type="file" accept="application/pdf,.pdf" id="pdfFile" style="display:none" onchange="onPdfFile(event)">
-        </label>
-        <span class="small" id="pdfStatus"></span>
-      </div>
-      <div id="pdfPicker" style="display:none;margin-top:10px">
-        <label>O seu nome <select id="pdfEmpSel" onchange="applyPdfEmployee()" style="min-width:240px"></select></label>
-      </div>
-      <div id="parseWarnings"></div>
-    </div>
-  </div>
-
-  <!-- GRELHA EDITÁVEL (preview unificado) -->
-  <div id="gridCard" class="card" style="display:none">
-    <h2>3 · Grelha do mês (corrija antes de calcular)</h2>
-    <p class="small">Cada dia já alinhado. Edite ER/Prev/horas onde necessário. Linhas a cinzento = dias de
-      semanas de fronteira (fora do mês) incluídos só para o cálculo semanal.</p>
-    <div style="overflow:auto;max-height:600px">
-      <table id="gridTable">
-        <thead><tr>
-          <th>Data</th><th>Sem.</th><th>Escala (P1)</th>
-          <th class="center">RW</th><th class="center">ER</th><th class="center">Prev</th>
-          <th>Início</th><th>Fim</th><th class="num">Horas</th><th>Obs.</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
+    <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> (R Rotina · T Tarde · A Alternativo · F Folga · BH Bolsa de Horas) e
+      <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
+      dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de
+      <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
+    <div id="manualCal" style="overflow-x:auto"></div>
   </div>
 
   <!-- CALCULAR -->
@@ -433,20 +391,6 @@ const CODE_MATRIX = {
 };
 const TN_MATRIX = { DU:'TN_DU', SAB:'TN_SAB', DOM:'TN_DOM', FER:'TN_FER' };
 
-/* SHIFT_CODE_MAP — significado dos códigos da Parte 1 (escala-base).
-   TODO: confirmar significados e (para turnos) início/fim reais.
-   worked:false => folga/descanso/férias (não conta como trabalho).
-   worked:true  => dia trabalhado (regular). Códigos não listados => aviso. */
-const SHIFT_CODE_MAP = {
-  'D':    {label:'Descanso',  worked:false, confirm:false},
-  'F':    {label:'Folga',     worked:false, confirm:false},
-  'Fr':   {label:'Férias',    worked:false, vacation:true, confirm:false},
-  'M256': {label:'Turno M256 (?)', worked:true, start:'', end:'', confirm:true},
-  'T13':  {label:'Turno T13 (?)',  worked:true, start:'', end:'', confirm:true},
-  'Bc':   {label:'Bc (?)',    worked:true, confirm:true},
-  'Cgs':  {label:'Cgs (?)',   worked:true, confirm:true}
-};
-
 /* =========================================================================
    TABELA SALARIAL SIM 2026 (posição 1) — valores fornecidos pelo utilizador.
    m = €/mês base; h = €/hora. IFE (internato) só tem regime "geral".
@@ -604,9 +548,7 @@ function isHoliday(dateISO){return holidaysForYear(+dateISO.slice(0,4)).some(h=>
 function holidayName(dateISO){const h=holidaysForYear(+dateISO.slice(0,4)).find(h=>h.date===dateISO);return h?h.name:'';}
 function dayKind(dateISO){if(isHoliday(dateISO))return 'holiday';const dow=parseISO(dateISO).getDay();return (dow===0||dow===6)?'weekend':'weekday';}
 const WEEKDAY_PT=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-const WEEKDAY_SHORT=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 function weekdayName(dateISO){return WEEKDAY_PT[parseISO(dateISO).getDay()];}
-function weekdayShort(dateISO){return WEEKDAY_SHORT[parseISO(dateISO).getDay()];}
 function isoWeekKey(dateISO){
   const d=parseISO(dateISO),t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
   const dn=(t.getUTCDay()+6)%7;t.setUTCDate(t.getUTCDate()-dn+3);
@@ -944,265 +886,12 @@ function computeDL119(totalErHoursYear, ctx, majBlocks, opts){
   return result;
 }
 
-/* =========================================================================
-   PARTE D — PARSER (3 partes) + CALENDÁRIO COM SEMANAS COMPLETAS
-   ========================================================================= */
-function stripAccents(s){return s.normalize('NFD').replace(/[̀-ͯ]/g,'');}
 function daysInMonth(y,m){return new Date(y,m,0).getDate();}
 
-// Um token da Parte 1 é "código" (vs nome) se: está no mapa, tem dígito,
-// é uma única maiúscula, ou é curto e capitalizado tipo código.
-function looksLikeCode(t){
-  if(SHIFT_CODE_MAP[t]) return true;
-  if(/\d/.test(t)) return true;
-  if(/^[A-Z]$/.test(t)) return true;
-  if(/^[A-Z][a-z]{1,2}$/.test(t)) return true; // Fr, Bc, Cgs
-  return false;
-}
-
-/* Parte 1: nome + 1 código/dia. token[0] = último dia do mês anterior. */
-function parsePart1(text, year, month){
-  const warnings=[];
-  const tokens=text.trim().split(/\s+/).filter(Boolean);
-  if(!tokens.length) return {name:'', byDate:{}, warnings};
-  // separar nome (run inicial de não-códigos) dos códigos
-  let i=0; while(i<tokens.length && !looksLikeCode(tokens[i])) i++;
-  const name=tokens.slice(0,i).join(' ');
-  const codes=tokens.slice(i);
-  if(!codes.length){ warnings.push({type:'err',msg:'Parte 1: não foram encontrados códigos de escala após o nome.'}); return {name,byDate:{},warnings}; }
-  // datas: token0 = último dia do mês anterior; token1.. = dias 1..N
-  const prevLast=iso(new Date(year,month-1,0)); // dia 0 do mês = último do anterior
-  const byDate={}; byDate[prevLast]={code:codes[0]};
-  const ndays=daysInMonth(year,month);
-  for(let d=1; d<codes.length; d++){
-    if(d>ndays){ warnings.push({type:'warn',msg:`Parte 1: ${codes.length-1} códigos para um mês de ${ndays} dias — ${codes.length-1-ndays} a mais (ignorados/verifique o nome).`}); break; }
-    const date=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    byDate[date]={code:codes[d]};
-  }
-  if(codes.length-1 < ndays)
-    warnings.push({type:'warn',msg:`Parte 1: só ${codes.length-1} dias para um mês de ${ndays} — faltam códigos no fim.`});
-  // validar códigos
-  Object.values(byDate).forEach(v=>{ if(v.code && !SHIFT_CODE_MAP[v.code]) warnings.push({type:'warn',msg:`Código de escala não mapeado: «${v.code}» (adicione-o a SHIFT_CODE_MAP).`}); });
-  return {name, byDate, warnings};
-}
-
-/* Parte 2/3: linhas "DIA [hora/código]". Aceita também tokens "3 20:00-08:00". */
-function parseSparsePart(text, year, month, kindLabel){
-  const warnings=[]; const byDate={};
-  const ndays=daysInMonth(year,month);
-  // normalizar: tratar quebras de linha e múltiplos espaços; cada "registo" começa num número de dia
-  const lines = text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  // se vier tudo numa linha, tentar dividir por padrão "número ..."
-  let records=[];
-  if(lines.length<=1 && text.trim()){
-    const one=text.trim();
-    const re=/(\d{1,2})\s+([^\d][^]*?)(?=\s+\d{1,2}\s|$)/g; // dia + resto até ao próximo "dia "
-    let m, any=false;
-    while((m=re.exec(one))){ records.push(m[1]+' '+m[2].trim()); any=true; }
-    if(!any) records=lines;
-  } else records=lines;
-
-  records.forEach((rec,idx)=>{
-    const m=/^(\d{1,2})\b\s*(.*)$/.exec(rec);
-    if(!m){ warnings.push({type:'warn',msg:`${kindLabel}: linha sem número de dia → «${rec}». Prefixe com o dia.`}); return; }
-    const day=+m[1], rest=(m[2]||'').trim();
-    if(day<1||day>ndays){ warnings.push({type:'warn',msg:`${kindLabel}: dia ${day} fora do mês.`}); return; }
-    const date=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    let start='', end='';
-    const mt=/(\d{1,2})[:hH]?(\d{2})?\s*(?:-|–|às|as|a|\/)\s*(\d{1,2})[:hH]?(\d{2})?/.exec(rest);
-    if(mt){ start=`${mt[1].padStart(2,'0')}:${mt[2]||'00'}`; end=`${mt[3].padStart(2,'0')}:${mt[4]||'00'}`; }
-    else {
-      const low=stripAccents(rest.toLowerCase());
-      const sc=Object.keys(SHIFT_CODE_MAP).find(c=>new RegExp('\\b'+c.toLowerCase()+'\\b').test(low));
-      if(sc && SHIFT_CODE_MAP[sc].start){ start=SHIFT_CODE_MAP[sc].start; end=SHIFT_CODE_MAP[sc].end; }
-      // "24"/"24h" => 08:00-08:00 (turno de 24h, janela do scheduler)
-      else if(/\b24h?\b/.test(low)){ start='08:00'; end='08:00'; }
-      // "prev" sem hora => deixa em branco (definir na grelha)
-    }
-    byDate[date]={start,end,raw:rest};
-  });
-  return {byDate, warnings};
-}
-
-/* Constrói a lista de datas: semana completa antes do mês + mês + semana completa depois. */
-function extendedDates(year, month){
-  const first=`${year}-${String(month).padStart(2,'0')}-01`;
-  const last=`${year}-${String(month).padStart(2,'0')}-${String(daysInMonth(year,month)).padStart(2,'0')}`;
-  const start=mondayOfWeek(first), end=sundayOfWeek(last);
-  const out=[]; let d=parseISO(start), e=parseISO(end);
-  while(d<=e){ out.push(iso(d)); d=addDays(d,1); }
-  return {dates:out, monthFirst:first, monthLast:last};
-}
-
 /* =========================================================================
-   PARTE D-bis — IMPORTAÇÃO DE PDF (SISQUAL / PDFsharp), sem biblioteca
-   -------------------------------------------------------------------------
-   Funciona apenas com PDFs de TEXTO digital (não digitalizações). Lê o texto
-   e as COORDENADAS de cada célula (via matrizes CTM/Tm) para alinhar colunas
-   (dias) e linhas (funcionários) de forma fiável.
+   PARTE E — UI: estado + seletores
    ========================================================================= */
-function pdfBytesToLatin1(u8){
-  let s=''; const CH=8192;
-  for(let i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null,u8.subarray(i,Math.min(i+CH,u8.length)));
-  return s;
-}
-// matriz [a,b,c,d,e,f]; ponto (x,y) -> (a x + c y + e, b x + d y + f)
-function matMul(m1,m2){return [
-  m1[0]*m2[0]+m1[1]*m2[2], m1[0]*m2[1]+m1[1]*m2[3],
-  m1[2]*m2[0]+m1[3]*m2[2], m1[2]*m2[1]+m1[3]*m2[3],
-  m1[4]*m2[0]+m1[5]*m2[2]+m2[4], m1[4]*m2[1]+m1[5]*m2[3]+m2[5]];}
-function matApply(m,x,y){return [m[0]*x+m[2]*y+m[4], m[1]*x+m[3]*y+m[5]];}
-
-// Extrai apenas os content streams legíveis (que contêm BT/Tj); ignora a
-// imagem FlateDecode (logótipo).
-function pdfContentStreams(latin1){
-  const out=[]; const re=/stream\r?\n/g; let m;
-  while((m=re.exec(latin1))){
-    const start=m.index+m[0].length;
-    const end=latin1.indexOf('endstream',start);
-    if(end<0) break;
-    const body=latin1.slice(start,end);
-    if(body.indexOf('BT')>=0 && body.indexOf('Tj')>=0) out.push(body);
-    re.lastIndex=end+9;
-  }
-  // alguns PDFs têm o conteúdo fora de stream; se nada apanhado, usar tudo
-  return out.length?out.join('\n'):latin1;
-}
-
-// Interpreta o content stream e devolve fragmentos {x,y,text}.
-function extractPdfFragments(content){
-  const frags=[]; let i=0; const n=content.length;
-  let ctm=[1,0,0,1,0,0]; const gstack=[];
-  let tm=[1,0,0,1,0,0], tlm=[1,0,0,1,0,0];
-  let ops=[];
-  function readString(){
-    i++; let depth=1,out='';
-    while(i<n && depth>0){ const c=content[i];
-      if(c==='\\'){ const nx=content[i+1];
-        if(nx>='0'&&nx<='7'){ let oct=nx;i+=2; for(let k=0;k<2&&content[i]>='0'&&content[i]<='7';k++){oct+=content[i];i++;} out+=String.fromCharCode(parseInt(oct,8)); continue; }
-        const mp={'n':'\n','r':'\r','t':'\t','b':'\b','f':'\f','(':'(',')':')','\\':'\\'};
-        out+=(mp[nx]!==undefined?mp[nx]:nx); i+=2; continue; }
-      if(c==='('){ depth++; out+=c; i++; continue; }
-      if(c===')'){ depth--; if(depth>0)out+=c; i++; continue; }
-      out+=c; i++;
-    }
-    return out;
-  }
-  while(i<n){
-    const c=content[i];
-    if(c==='('){ ops.push({t:'str',v:readString()}); continue; }
-    if(c==='<'){ if(content[i+1]==='<'){i+=2;ops=[];continue;} const j=content.indexOf('>',i); ops.push({t:'str',v:''}); i=(j<0?n:j+1); continue; }
-    if(c==='>'){ i++; continue; }
-    if(c==='/'){ let j=i+1; while(j<n && !/[\s()<>\[\]{}\/]/.test(content[j])) j++; ops.push({t:'name'}); i=j; continue; }
-    if(c==='['||c===']'){ i++; continue; }
-    if(/\s/.test(c)){ i++; continue; }
-    if(c==='-'||c==='.'||(c>='0'&&c<='9')){ let j=i; while(j<n && /[-.\d]/.test(content[j])) j++; ops.push({t:'num',v:parseFloat(content.slice(i,j))}); i=j; continue; }
-    let j=i; while(j<n && /[A-Za-z*'"]/.test(content[j])) j++;
-    const op=content.slice(i,j); if(!op){ i++; continue; } i=j;
-    const nums=ops.filter(o=>o.t==='num').map(o=>o.v);
-    if(op==='q') gstack.push(ctm.slice());
-    else if(op==='Q'){ if(gstack.length) ctm=gstack.pop(); }
-    else if(op==='cm'){ if(nums.length>=6) ctm=matMul(nums.slice(-6),ctm); }
-    else if(op==='BT'){ tm=[1,0,0,1,0,0]; tlm=tm.slice(); }
-    else if(op==='Td'||op==='TD'){ if(nums.length>=2){ const d=nums.slice(-2); tlm=matMul([1,0,0,1,d[0],d[1]],tlm); tm=tlm.slice(); } }
-    else if(op==='Tm'){ if(nums.length>=6){ tlm=nums.slice(-6); tm=tlm.slice(); } }
-    else if(op==='T*'){ tm=tlm.slice(); }
-    else if(op==='Tj'){ const s=[...ops].reverse().find(o=>o.t==='str'); if(s){ const trm=matMul(tm,ctm); const p=matApply(trm,0,0); frags.push({x:p[0],y:p[1],text:s.v}); } }
-    ops=[];
-  }
-  return frags;
-}
-
-// Atribui cada fragmento de uma linha à coluna-dia mais próxima (por X).
-function cellsForRow(rowFrags, dayColsX){
-  const cells=dayColsX.map(()=>'');
-  const lastX=dayColsX[dayColsX.length-1];
-  for(const f of rowFrags){
-    if(f.x < dayColsX[0]-8 || f.x > lastX+14) continue;   // ignora nome/nº/saldos
-    let bi=0,bd=1e9;
-    for(let i=0;i<dayColsX.length;i++){ const d=Math.abs(f.x-dayColsX[i]); if(d<bd){bd=d;bi=i;} }
-    if(bd<10){ const t=f.text.trim(); if(t) cells[bi]=(cells[bi]?cells[bi]+' ':'')+t; }
-  }
-  return cells;
-}
-
-// Lê a LEGENDA do PDF -> { codigoBase: {start,end,hours,worked,desc} }.
-function parsePdfLegend(frags){
-  const texts=frags.map(f=>f.text.trim());
-  let s=texts.indexOf('Espaço'); if(s<0) s=0;
-  let e=texts.findIndex(t=>/Generated by SISQUAL/i.test(t)); if(e<0) e=texts.length;
-  const seg=frags.slice(s,e);
-  const map={};
-  const isCode=(t)=> t==='Prv N' || t==='0' ||
-    /^(?:½?[A-Za-zºÀ-ÿ]{1,4}\d{0,3}(?:\(\d+(?::\d+)?\))?)$/.test(t);
-  const absenceRe=/(Folga|Férias|Descanso|Doença|Compensa|Dispensa|Comiss|Passivo|Toler[aâ]ncia|Bolsa|Identificada|Horas Extra)/i;
-  let pending=null;
-  for(const f of seg){
-    const t=(f.text||'').trim();
-    if(!t || t==='Espaço'){ continue; }
-    if(isCode(t)){ pending=t; continue; }
-    // t é descrição -> associa ao código pendente
-    if(pending){
-      const base=pending.replace(/\s*\(.*\)\s*$/,'').trim();
-      const win=/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/.exec(t);
-      let start='',end='',hours=null;
-      if(win){ start=`${win[1].padStart(2,'0')}:${win[2]}`; end=`${win[3].padStart(2,'0')}:${win[4]}`; }
-      const ann=/\((\d+)(?::(\d+))?\)\s*$/.exec(pending);
-      if(ann){ hours=parseInt(ann[1],10)+(ann[2]?parseInt(ann[2],10)/60:0); }
-      const absence=absenceRe.test(t);
-      const worked=(!!win || hours>0 || /Isen[çc][aã]o/i.test(t)) && !absence;
-      if(!map[base]) map[base]={start,end,hours,worked,desc:t};
-      pending=null;
-    }
-  }
-  return map;
-}
-
-// Estrutura o PDF -> {month, year, monthLabel, dayColsX, employees[{num,name,rota,urg,prev}]}.
-function structurePdf(frags){
-  const monthsPT={janeiro:1,fevereiro:2,marco:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12};
-  let month=null,year=null,monthLabel='';
-  for(const f of frags){ const m=/^([A-Za-zçÇÀ-ÿ]+)\s+de\s+(\d{4})$/.exec(f.text.trim());
-    if(m){ const key=stripAccents(m[1].toLowerCase()); if(monthsPT[key]){ month=monthsPT[key]; year=+m[2]; monthLabel=f.text.trim(); break; } } }
-  if(!month) return null;
-  // linha dos números de dia (contém algo como "1-mai")
-  let dayY=null;
-  for(const f of frags){ if(/^\d{1,2}-[a-zç]{3}$/i.test(f.text.trim())){ dayY=f.y; break; } }
-  if(dayY==null){
-    const byY={}; frags.forEach(f=>{ if(/^\d{1,2}$/.test(f.text.trim())){ const k=Math.round(f.y); (byY[k]=byY[k]||[]).push(f);} });
-    let best=null; Object.values(byY).forEach(a=>{ if(!best||a.length>best.length)best=a; });
-    if(best&&best.length) dayY=best[0].y;
-  }
-  if(dayY==null) return null;
-  const dayFrags=frags.filter(f=>Math.abs(f.y-dayY)<2 && /^(\d{1,2}|\d{1,2}-[a-zç]{3})$/i.test(f.text.trim())).sort((a,b)=>a.x-b.x);
-  const dayColsX=dayFrags.map(f=>f.x);
-  if(dayColsX.length<2) return null;
-  const secHeaders=frags.filter(f=>/^(Rotina|Urgência Externa|Prevenção)$/.test(f.text.trim())).map(f=>({name:f.text.trim(),y:f.y}));
-  function sectionForY(y){ const c=secHeaders.filter(s=>s.y>y+1); if(!c.length)return null; return c.reduce((a,b)=>a.y<b.y?a:b).name; }
-  const numFrags=frags.filter(f=>f.x<50 && /^\d{4,6}$/.test(f.text.trim()));
-  const employees=[]; const byNum={};
-  numFrags.forEach(nf=>{
-    const y=nf.y, num=nf.text.trim();
-    const nameFrag=frags.find(f=>Math.abs(f.y-y)<2 && f.x>60 && f.x<145 && /[A-Za-zÀ-ÿ]{2,}/.test(f.text));
-    const name=nameFrag?nameFrag.text.trim():('#'+num);
-    const sec=sectionForY(y);
-    const rowFrags=frags.filter(f=>Math.abs(f.y-y)<2.5);
-    const cells=cellsForRow(rowFrags,dayColsX);
-    if(!byNum[num]){ byNum[num]={num,name,rota:[],urg:[],prev:[]}; employees.push(byNum[num]); }
-    if(sec==='Rotina') byNum[num].rota=cells;
-    else if(sec==='Urgência Externa') byNum[num].urg=cells;
-    else if(sec==='Prevenção') byNum[num].prev=cells;
-    if(byNum[num].name.startsWith('#') && !name.startsWith('#')) byNum[num].name=name;
-  });
-  return {month,year,monthLabel,dayColsX,employees};
-}
-
-/* =========================================================================
-   PARTE E — UI: estado + seletores + grelha
-   ========================================================================= */
-let UI = { inputMode:'manual', manualRows:[], gridRows:[], lastResult:null, name:'', dl119MajBlocks:new Set(), dl119WeekendConfirmed:false };
-let PDF_DATA=null;     // resultado de structurePdf()
-let PDF_LEGEND={};     // legenda lida do PDF (código -> {start,end,hours,worked})
+let UI = { manualRows:[], lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false };
 
 // Horário base (40/42) menos redução legal (0–7) = horário semanal efetivo.
 function weeklyBase(){return parseInt(document.getElementById('selWeeklyBase').value,10);}
@@ -1314,19 +1003,14 @@ function initSelectors(){
   document.getElementById('selBolsaH').innerHTML=mk(1,10,4);
   sb.addEventListener('change',updateWeeklyHint); sr.addEventListener('change',updateWeeklyHint);
   ['selRotinaH','selTardeH','selExtraH','selBolsaH'].forEach(id=>
-    document.getElementById(id).addEventListener('change',()=>{ if(UI.inputMode==='manual') renderManualCalendar(); }));
+    document.getElementById(id).addEventListener('change',renderManualCalendar));
   updateWeeklyHint(); updatePeriodAvailability();
 }
 function onStartMonthChange(){ updatePeriodAvailability(); buildCalendar(); }
 function onNumMesesChange(){ updatePeriodAvailability(); buildCalendar(); }
 
-// Atualiza a etiqueta do "mês âncora" (ponto 1), o hint do período, e a
-// disponibilidade do PDF (só faz sentido com exatamente 1 mês escolhido).
+// Atualiza a etiqueta do "mês âncora" (ponto 1) e o hint do período.
 function updatePeriodAvailability(){
-  const single=isSingleMonth();
-  const tp=document.getElementById('tabPaste');
-  if(tp){ tp.disabled=!single; tp.style.opacity=single?1:0.4; tp.style.cursor=single?'pointer':'not-allowed';
-    if(!single && UI.inputMode==='paste') switchInputTab('manual'); }
   const anchor=priorAnchorLabel();
   const l1=document.getElementById('priorMonthLabel1'); if(l1) l1.textContent=anchor;
   const l2=document.getElementById('priorMonthLabel2'); if(l2) l2.textContent=anchor;
@@ -1352,125 +1036,12 @@ function renderConfirmBanner(){
   el.innerHTML=html;
 }
 
-function switchInputTab(mode){
-  UI.inputMode=mode;
-  document.getElementById('tabManual').classList.toggle('active',mode==='manual');
-  document.getElementById('tabPaste').classList.toggle('active',mode==='paste');
-  document.getElementById('paneManual').classList.toggle('active',mode==='manual');
-  document.getElementById('panePaste').classList.toggle('active',mode==='paste');
-}
 function switchOutputTab(mode){
   document.getElementById('tabOutMensal').classList.toggle('active',mode==='mensal');
   document.getElementById('tabOutAnual').classList.toggle('active',mode==='anual');
   document.getElementById('paneOutMensal').classList.toggle('active',mode==='mensal');
   document.getElementById('paneOutAnual').classList.toggle('active',mode==='anual');
 }
-function clearPasteBoxes(){['pastePart1','pastePart2','pastePart3'].forEach(id=>document.getElementById(id).value='');document.getElementById('parseWarnings').innerHTML='';}
-
-/* ---- IMPORTAÇÃO DE PDF ---- */
-// Consulta um código (célula) na legenda do PDF; recorre a SHIFT_CODE_MAP.
-function pdfLookupCode(raw){
-  if(raw==null) return null;
-  const code=String(raw).trim();
-  if(!code) return null;
-  const mh=/^(\d+(?:[.,]\d+)?)\s*h$/i.exec(code);            // "3h" / "8h"
-  if(mh) return {worked:true,start:'',end:'',hours:parseFloat(mh[1].replace(',','.'))};
-  const base=code.replace(/\s*\(.*\)\s*$/,'').trim();
-  let info=PDF_LEGEND[code]||PDF_LEGEND[base];
-  if(info) return info;
-  const sm=SHIFT_CODE_MAP[code]||SHIFT_CODE_MAP[base];
-  if(sm) return {worked:sm.worked!==false,start:sm.start||'',end:sm.end||'',hours:null};
-  return {worked:true,start:'',end:'',hours:null,unknown:true};
-}
-
-function onPdfFile(ev){
-  const file=ev.target.files[0]; if(!file) return;
-  const status=document.getElementById('pdfStatus');
-  status.textContent='A ler o PDF…';
-  const rd=new FileReader();
-  rd.onload=function(){
-    try{
-      const u8=new Uint8Array(rd.result);
-      const latin1=pdfBytesToLatin1(u8);
-      const content=pdfContentStreams(latin1);
-      const frags=extractPdfFragments(content);
-      PDF_LEGEND=parsePdfLegend(frags);
-      PDF_DATA=structurePdf(frags);
-      if(!PDF_DATA || !PDF_DATA.employees.length){
-        status.innerHTML='<span style="color:var(--err)">Não foi possível interpretar este PDF (talvez seja digitalizado ou tenha outro formato). Use as caixas de colar abaixo.</span>';
-        document.getElementById('pdfPicker').style.display='none'; return;
-      }
-      const sel=document.getElementById('pdfEmpSel');
-      sel.innerHTML='<option value="">— escolher o seu nome —</option>'+
-        PDF_DATA.employees.map((e,i)=>`<option value="${i}">${escapeHtml(e.name)}</option>`).join('');
-      document.getElementById('pdfPicker').style.display='block';
-      status.innerHTML=`✅ PDF lido: <b>${escapeHtml(PDF_DATA.monthLabel)}</b> · ${PDF_DATA.employees.length} funcionários · ${Object.keys(PDF_LEGEND).length} códigos na legenda. Escolha o seu nome.`;
-    }catch(err){
-      status.innerHTML='<span style="color:var(--err)">Erro ao ler o PDF: '+escapeHtml(err.message||String(err))+'</span>';
-    }
-  };
-  rd.onerror=function(){ status.innerHTML='<span style="color:var(--err)">Falha ao abrir o ficheiro.</span>'; };
-  rd.readAsArrayBuffer(file);
-}
-
-function applyPdfEmployee(){
-  const v=document.getElementById('pdfEmpSel').value;
-  if(v==='' || !PDF_DATA) return;
-  buildGridFromPdf(PDF_DATA.employees[+v]);
-}
-
-// Constrói a grelha a partir de um funcionário do PDF (Rotina/Urgência/Prevenção).
-function buildGridFromPdf(emp){
-  const y=PDF_DATA.year, m=PDF_DATA.month;
-  // PDF é sempre 1 mês -> sincroniza o mês inicial e força número de meses = 1.
-  document.getElementById('selStartMonth').value=m;
-  document.getElementById('selStartYear').value=y;
-  const sn=document.getElementById('selNumMeses'); if(sn) sn.value='1';
-  updatePeriodAvailability();
-  updateWeeklyHint();
-  UI.name=emp.name; UI.inputMode='paste';
-  const {dates,monthFirst,monthLast}=extendedDates(y,m);
-  const prevLast=iso(new Date(y,m-1,0));
-  const warns=[];
-  UI.gridRows=dates.map(date=>{
-    const inMonth=(date>=monthFirst && date<=monthLast);
-    let colIdx=null;
-    if(inMonth) colIdx=parseISO(date).getDate();     // dia d -> coluna d
-    else if(date===prevLast) colIdx=0;               // último dia do mês anterior -> coluna 0
-    const rota=(colIdx!=null)?(emp.rota[colIdx]||''):'';
-    const urg =(colIdx!=null)?(emp.urg[colIdx]||''):'';
-    const prv =(colIdx!=null)?(emp.prev[colIdx]||''):'';
-    const rInfo=pdfLookupCode(rota), uInfo=pdfLookupCode(urg), pInfo=pdfLookupCode(prv);
-    const kind=dayKind(date), isWeekday=(kind==='weekday');
-    const er = !!(uInfo && uInfo.worked);
-    const prevention = !!(prv && ( (pInfo&&pInfo.worked) || /^prv|^prev/i.test(prv) ));
-    let regular=false,start='',end='',hours=null;
-    if(er){
-      start=uInfo.start||''; end=uInfo.end||'';
-      if(!start && uInfo.hours) hours=uInfo.hours;
-      if(!start && !uInfo.hours) warns.push({type:'warn',msg:`${date}: ER «${urg}» sem horário na legenda — indique início/fim na grelha.`});
-    } else if(prevention){
-      start=(pInfo&&pInfo.start)||''; end=(pInfo&&pInfo.end)||'';
-      if(!start && pInfo && pInfo.hours) hours=pInfo.hours;
-      if(!start && !(pInfo&&pInfo.hours)) warns.push({type:'warn',msg:`${date}: prevenção «${prv}» sem horário — indique início/fim na grelha.`});
-    } else if(rInfo && rInfo.worked){
-      regular=true;
-      // regular: preferir horas líquidas da legenda; senão janela
-      if(rInfo.hours){ hours=rInfo.hours; } else { start=rInfo.start||''; end=rInfo.end||''; }
-    } else if(!inMonth && isWeekday){
-      regular=true;   // dia útil de semana de fronteira -> Regular
-    }
-    if(rota && rInfo && rInfo.unknown) warns.push({type:'warn',msg:`Código de escala desconhecido: «${rota}» (${formatPT(date)}). Verifique na grelha.`});
-    return {date,inMonth,roster:rota,off:!(rInfo&&rInfo.worked),regular,er,prevention,start,end,hours,
-      note:(!inMonth?'fronteira':'')+(urg?` ER:${urg}`:'')+(prv?` Pv:${prv}`:'')};
-  });
-  const seen=new Set(); const uniq=warns.filter(w=>{const k=w.msg;if(seen.has(k))return false;seen.add(k);return true;});
-  document.getElementById('parseWarnings').innerHTML=
-    `<div class="alert info">👤 <b>${escapeHtml(emp.name)}</b> · ${escapeHtml(PDF_DATA.monthLabel)} — importado do PDF. Verifique a grelha e clique em Calcular.</div>`+
-    uniq.slice(0,15).map(w=>`<div class="alert ${w.type}">${w.msg}</div>`).join('');
-  renderGrid();
-}
-
 /* ---- MANUAL ---- */
 /* Constrói as linhas manuais a partir de selectedMonths() — sempre N meses
    SEGUIDOS a contar do mês inicial (ver PARTE E). Para CADA mês, alarga aos
@@ -1634,102 +1205,22 @@ function renderManualCalendar(){
   }));
 }
 
-/* ---- PASTE -> GRELHA ---- */
-function parseAndBuildGrid(){
-  const y=+document.getElementById('selYear').value, m=+document.getElementById('selMonth').value;
-  const p1=parsePart1(document.getElementById('pastePart1').value,y,m);
-  const p2=parseSparsePart(document.getElementById('pastePart2').value,y,m,'Parte 2 (ER)');
-  const p3=parseSparsePart(document.getElementById('pastePart3').value,y,m,'Parte 3 (Prev)');
-  UI.name=p1.name;
-
-  const {dates,monthFirst,monthLast}=extendedDates(y,m);
-  UI.gridRows=dates.map(date=>{
-    const inMonth = (date>=monthFirst && date<=monthLast);
-    const roster = p1.byDate[date]?.code || '';
-    const off = roster && SHIFT_CODE_MAP[roster] && SHIFT_CODE_MAP[roster].worked===false;
-    const er = !!p2.byDate[date];
-    const prev = !!p3.byDate[date];
-    const kind=dayKind(date), isWeekday=(kind==='weekday');
-    // RW: dia útil trabalhado sem ER. Dentro do mês: roster trabalhado (ou desconhecido) e não folga.
-    //     Fora do mês (semana de fronteira): dia útil sem ER => pré-preenche RW.
-    let regular=false;
-    if(!er){
-      if(inMonth){ regular = isWeekday && !off && roster!=='' ? true : (isWeekday && !off && roster==='' ? true : false); }
-      else { regular = isWeekday; }   // dias extra de semana de fronteira
-    }
-    // horas ER/prev a partir das partes 2/3
-    let start='',end='';
-    if(er){ start=p2.byDate[date].start||''; end=p2.byDate[date].end||''; }
-    else if(prev){ start=p3.byDate[date].start||''; end=p3.byDate[date].end||''; }
-    return {date, inMonth, roster, off:!!off, regular, er, prevention:prev, start, end, hours:null,
-            note: (!inMonth?'semana fronteira':'') };
-  });
-
-  const warns=[...p1.warnings,...p2.warnings,...p3.warnings];
-  const wa=document.getElementById('parseWarnings');
-  wa.innerHTML = (UI.name?`<div class="alert info">👤 Funcionário: <b>${escapeHtml(UI.name)}</b></div>`:'')
-    + (warns.length?warns.map(w=>`<div class="alert ${w.type}">${w.msg}</div>`).join('')
-                   :`<div class="alert ok">✅ Partes analisadas sem avisos.</div>`);
-  renderGrid();
-}
-
-function renderGrid(){
-  document.getElementById('gridCard').style.display='block';
-  const tb=document.querySelector('#gridTable tbody'); tb.innerHTML='';
-  UI.gridRows.forEach((r,i)=>{
-    const kind=dayKind(r.date);
-    const cls=[ r.off?'r-off':'', kind!=='weekday'?'r-fds':'', !r.inMonth?'r-extra':'' ].filter(Boolean).join(' ');
-    const tr=document.createElement('tr'); if(cls)tr.className=cls;
-    const codeWarn = r.roster && !SHIFT_CODE_MAP[r.roster] ? ' ⚠️' : '';
-    tr.innerHTML=`<td>${formatPT(r.date)}</td><td class="small">${weekdayShort(r.date)}${kind==='holiday'?' 🎌':''}</td>
-      <td class="small mono">${escapeHtml(r.roster)}${codeWarn}</td>
-      <td class="center"><input type="checkbox" data-i="${i}" data-f="regular" ${r.regular?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-i="${i}" data-f="er" ${r.er?'checked':''}></td>
-      <td class="center"><input type="checkbox" data-i="${i}" data-f="prevention" ${r.prevention?'checked':''}></td>
-      <td><input type="time" data-i="${i}" data-f="start" value="${r.start}"></td>
-      <td><input type="time" data-i="${i}" data-f="end" value="${r.end}"></td>
-      <td class="num"><input type="number" min="0" max="24" step="0.5" data-i="${i}" data-f="hours" value="${r.hours??''}"></td>
-      <td class="small">${r.note}</td>`;
-    tb.appendChild(tr);
-  });
-  tb.querySelectorAll('input').forEach(el=>el.addEventListener('change',e=>{
-    const i=+e.target.dataset.i,f=e.target.dataset.f;
-    if(e.target.type==='checkbox')UI.gridRows[i][f]=e.target.checked;
-    else if(f==='hours')UI.gridRows[i][f]=e.target.value===''?null:parseFloat(e.target.value);
-    else UI.gridRows[i][f]=e.target.value;
-  }));
-}
-
-/* Normaliza as duas origens (manual / PDF) para a forma que o motor consome:
+/* Normaliza UI.manualRows para a forma que o motor consome:
    {date, inMonth, regularHours, er, start, end, prevention, workType, bancoType}
    Banco Dia = 08:00–20:00 · Banco Noite = 20:00–08:00 · ambos = 08:00–08:00 (24h).
-   workType/bancoType (só no modo manual) identificam a droplist escolhida
-   (ex.: 'rotina', 'noite') — usados nas validações por regime. */
+   workType/bancoType identificam o tick escolhido (ex.: 'rotina', 'noite') —
+   usados nas validações por regime. */
 function collectEntries(){
-  if(UI.inputMode==='manual'){
-    return UI.manualRows.filter(r=>r.work||r.banco)
-      .map(r=>{
-        // Urgência D (08:00–20:00) ou 24h sobrepõe-se ao horário diurno normal
-        // -> ignora o trabalho normal desse dia (evita duplicar horas).
-        const ignoresWork = (r.banco==='dia'||r.banco==='h24');
-        const regularHours=ignoresWork?0:workHoursOf(r.work);
-        const b=BANCO_TYPES[r.banco];
-        return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
-                er:!!b, start:b?b.start:'', end:b?b.end:'', prevention:false,
-                workType:ignoresWork?'':(r.work||''), bancoType:r.banco||''};
-      });
-  }
-  // PDF -> grelha
-  return UI.gridRows.filter(r=>r.regular||r.er||r.prevention||r.start||r.end||(r.hours>0))
+  return UI.manualRows.filter(r=>r.work||r.banco)
     .map(r=>{
-      let regularHours=0;
-      if(r.regular && !r.er){
-        regularHours = (typeof r.hours==='number' && r.hours>0) ? r.hours
-          : (r.start&&r.end ? shiftDurationMin(timeToMin(r.start),timeToMin(r.end))/60 : dailyContractHours());
-      }
+      // Urgência D (08:00–20:00) ou 24h sobrepõe-se ao horário diurno normal
+      // -> ignora o trabalho normal desse dia (evita duplicar horas).
+      const ignoresWork = (r.banco==='dia'||r.banco==='h24');
+      const regularHours=ignoresWork?0:workHoursOf(r.work);
+      const b=BANCO_TYPES[r.banco];
       return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
-              er:!!r.er, start:r.start, end:r.end, hours:r.hours,
-              prevention:!!r.prevention, rosterCode:r.roster||''};
+              er:!!b, start:b?b.start:'', end:b?b.end:'', prevention:false,
+              workType:ignoresWork?'':(r.work||''), bancoType:r.banco||''};
     });
 }
 
@@ -1744,14 +1235,14 @@ function dl119PriorHours(){ const e=document.getElementById('inpDL119PriorHours'
 
 function calculate(){
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
-  if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (${UI.inputMode==='paste'?'importe o PDF ou preencha a grelha':'preencha o manual'}).</span>`; return; }
+  if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (preencha o calendário).</span>`; return; }
   const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:erHourly(),
     initialDeficit:initialDeficitHours(), regime:currentRegime()};
   const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
   meta.innerHTML='';
   renderValidation(result.warnings); renderSummary(result.summary,result); renderShifts(result.shifts.filter(s=>s.isER)); renderAnnual(result);
   // Atualiza a coluna "Semana" do calendário (ponto 3) com os totais agora calculados.
-  if(UI.inputMode==='manual') renderManualCalendar();
+  renderManualCalendar();
 
   const dl119Card=document.getElementById('dl119Card');
   const weekendRow=document.getElementById('dl119WeekendConfirmRow');
@@ -1858,7 +1349,6 @@ function renderShifts(shifts){
   }).join('');
 }
 function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
-function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function renderAnnual(result){
   document.getElementById('annualCard').style.display='block';
   const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
