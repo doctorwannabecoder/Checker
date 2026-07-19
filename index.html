@@ -116,22 +116,30 @@
   .mcal{margin-bottom:20px}
   .mcal h3{margin:0 0 8px;font-size:13px;color:var(--accent2);font-weight:700;letter-spacing:-0.01em}
   .mcal table{table-layout:fixed;width:100%;min-width:980px}
-  .mcal th{text-align:center;font-size:11px;padding:6px 4px;position:static}
+  .mcal th{text-align:center;font-size:20px;font-weight:800;padding:6px 4px;position:static}
+  .mcal th.weekcol,.mcal th.legendcol{font-size:11px;font-weight:700}
   .mcal td{vertical-align:top;padding:8px 6px;height:112px}
+  .mcal col.legendcol{width:58px}
   .mcal col.daycol{width:auto}
   .mcal col.weekcol{width:190px}
   .mcal th.weekcol,.mcal td.weeksum{border-left:2px solid var(--line)}
+  .mcal th.legendcol,.mcal td.legend{border-right:2px solid var(--line)}
   .mcal td.out{background:#0d1526;opacity:.55}
   .mcal td.blank{background:#0b1220;border-color:#1e293b}
-  .mcal .dnum{font-size:19px;font-weight:800;color:var(--text);text-align:center;margin-bottom:2px}
+  .mcal td.legend,.mcal td:not(.blank):not(.weeksum):not(.legend){display:grid;grid-template-rows:24px 32px 32px;row-gap:2px}
+  .mcal td.legend{padding:8px 6px 8px 2px}
+  .mcal td.legend .legend-row{font-size:9px;font-weight:700;color:var(--muted);text-align:right;align-self:center;
+    text-transform:uppercase;letter-spacing:.03em;line-height:1.15}
+  .mcal .dnum{font-size:19px;font-weight:800;color:var(--text);text-align:center;align-self:center}
   .mcal td.fds .dnum{color:var(--h24)}
-  .mcal select{width:100%;padding:6px 6px;font-size:14px;margin-top:5px}
-  .banco-toggles{display:flex;gap:4px;margin-top:5px}
-  .banco-btn{flex:1;padding:6px 0;font-size:13px;font-weight:800;border-radius:6px;cursor:pointer;
+  .mcal select{width:100%;padding:6px 6px;font-size:14px}
+  .work-toggles,.banco-toggles{display:flex;gap:3px;align-self:center}
+  .work-btn,.banco-btn{flex:1;padding:5px 0;font-size:12px;font-weight:800;border-radius:6px;cursor:pointer;
     background:#0b1220;color:var(--muted);border:1.5px solid var(--line);transition:background .1s,color .1s,border-color .1s}
+  .work-btn.active{background:var(--accent2);border-color:var(--accent2);color:#06283b}
   .banco-btn.banco-d.active{background:var(--day);border-color:var(--day);color:#06283b}
   .banco-btn.banco-n.active{background:var(--night);border-color:var(--night);color:#fff}
-  .banco-btn:hover{border-color:var(--accent2)}
+  .work-btn:hover,.banco-btn:hover{border-color:var(--accent2)}
   .mcal td.weeksum{background:#0b1220;font-size:11px;line-height:1.6;vertical-align:middle}
   .mcal td.weeksum b{color:var(--text)}
   .mcal td.weeksum .muted{color:var(--muted)}
@@ -1512,8 +1520,13 @@ function renderManualCalendar(){
   const host=document.getElementById('manualCal'); if(!host || !UI.periodRanges || !UI.periodRanges.length) return;
   const DOW=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
   const monthsPT=MONTHS_PT;
-  const workOpts=(sel)=>['<option value="">—</option>'].concat(
-    Object.entries(WORK_TYPES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.label} (${v.hours()}h)</option>`)).join('');
+  // Trabalho normal: tick único (só um tipo por dia) — à semelhança do banco.
+  const WORK_TOGGLE_LABELS={rotina:'R',tarde:'T',extra:'E',folga:'F',bolsa:'B'};
+  const workToggles=(date,sel)=>{
+    const btns=Object.entries(WORK_TYPES).map(([k,v])=>
+      `<button type="button" class="work-btn${sel===k?' active':''}" data-k="${k}" title="${v.label} (${v.hours()}h)">${WORK_TOGGLE_LABELS[k]}</button>`).join('');
+    return `<div class="work-toggles" data-d="${date}">${btns}</div>`;
+  };
   // Banco: D/N como ticks independentes (à semelhança do simulador DL119) em
   // vez de droplist — D+N ativos em simultâneo = Banco 24h.
   const bancoToggles=(date,sel)=>{
@@ -1523,6 +1536,7 @@ function renderManualCalendar(){
       <button type="button" class="banco-btn banco-n${isN?' active':''}" data-t="n" title="Banco Noite (20:00–08:00)">N</button>
     </div>`;
   };
+  const legendTd=`<td class="legend"><div class="legend-row">Dia</div><div class="legend-row">Trab.</div><div class="legend-row">Banco</div></td>`;
 
   // blocos = exatamente os meses escolhidos (UI.periodRanges), na ordem em que já vêm (cronológica)
   const blocksMeta=UI.periodRanges;
@@ -1561,22 +1575,25 @@ function renderManualCalendar(){
           const cls=[kind!=='weekday'?'fds':'', !row.inMonth?'out':''].filter(Boolean).join(' ');
           tds+=`<td class="${cls}" title="${kind==='holiday'?holidayName(date):''}">
             <div class="dnum">${parseISO(date).getDate()}${kind==='holiday'?' 🎌':''}</div>
-            <select data-d="${date}" data-f="work">${workOpts(row.work)}</select>
+            ${workToggles(date,row.work)}
             ${bancoToggles(date,row.banco)}</td>`;
         }
         dd=addDays(dd,1);
       }
-      rows+=`<tr>${tds}<td class="weeksum">${weekSummaryCellHtml(weekMonday)}</td></tr>`;
+      rows+=`<tr>${legendTd}${tds}<td class="weeksum">${weekSummaryCellHtml(weekMonday)}</td></tr>`;
     }
     return `<div class="mcal"><h3>${monthsPT[bm.m-1]} ${bm.y}</h3>
-      <table><colgroup>${DOW.map(()=>'<col class="daycol">').join('')}<col class="weekcol"></colgroup>
-      <thead><tr>${DOW.map(x=>`<th>${x}</th>`).join('')}<th class="weekcol">Semana</th></tr></thead>
+      <table><colgroup><col class="legendcol">${DOW.map(()=>'<col class="daycol">').join('')}<col class="weekcol"></colgroup>
+      <thead><tr><th class="legendcol"></th>${DOW.map(x=>`<th>${x}</th>`).join('')}<th class="weekcol">Semana</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;
   });
   host.innerHTML=blocks.join('');
-  host.querySelectorAll('select').forEach(el=>el.addEventListener('change',e=>{
-    const date=e.target.dataset.d, f=e.target.dataset.f;
-    if(UI.rowByDate[date]) UI.rowByDate[date][f]=e.target.value;
+  host.querySelectorAll('.work-btn').forEach(btn=>btn.addEventListener('click',e=>{
+    const wrap=btn.parentElement, date=wrap.dataset.d, key=btn.dataset.k;
+    const row=UI.rowByDate[date]; if(!row) return;
+    const wasActive = row.work===key;
+    row.work = wasActive ? '' : key;
+    wrap.querySelectorAll('.work-btn').forEach(b=>b.classList.toggle('active', !wasActive && b.dataset.k===key));
   }));
   host.querySelectorAll('.banco-btn').forEach(btn=>btn.addEventListener('click',e=>{
     const wrap=btn.parentElement, date=wrap.dataset.d, type=btn.dataset.t;
