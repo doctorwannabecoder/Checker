@@ -126,14 +126,14 @@
   .mcal th.legendcol,.mcal td.legend{border-right:2px solid var(--line)}
   .mcal td.out{background:#0d1526;opacity:.55}
   .mcal td.blank{background:#0b1220;border-color:#1e293b}
-  .mcal td.legend,.mcal td:not(.blank):not(.weeksum):not(.legend){display:grid;grid-template-rows:24px 32px 32px;row-gap:2px}
   .mcal td.legend{padding:8px 6px 8px 2px}
-  .mcal td.legend .legend-row{font-size:9px;font-weight:700;color:var(--muted);text-align:right;align-self:center;
-    text-transform:uppercase;letter-spacing:.03em;line-height:1.15}
-  .mcal .dnum{font-size:19px;font-weight:800;color:var(--text);text-align:center;align-self:center}
+  .mcal td.legend .legend-row{height:24px;line-height:24px;font-size:9px;font-weight:700;color:var(--muted);text-align:right;
+    text-transform:uppercase;letter-spacing:.03em}
+  .mcal td.legend .legend-row:nth-child(2),.mcal td.legend .legend-row:nth-child(3){height:32px;line-height:32px;margin-top:2px}
+  .mcal .dnum{height:24px;line-height:24px;font-size:19px;font-weight:800;color:var(--text);text-align:center}
   .mcal td.fds .dnum{color:var(--h24)}
   .mcal select{width:100%;padding:6px 6px;font-size:14px}
-  .work-toggles,.banco-toggles{display:flex;gap:3px;align-self:center}
+  .work-toggles,.banco-toggles{height:32px;display:flex;align-items:center;gap:3px;margin-top:2px}
   .work-btn,.banco-btn{flex:1;padding:5px 0;font-size:12px;font-weight:800;border-radius:6px;cursor:pointer;
     background:#0b1220;color:var(--muted);border:1.5px solid var(--line);transition:background .1s,color .1s,border-color .1s}
   .work-btn.active{background:var(--accent2);border-color:var(--accent2);color:#06283b}
