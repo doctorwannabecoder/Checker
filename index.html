@@ -240,17 +240,16 @@
 
     <!-- PDF (só em modo mensal) -->
     <div id="panePaste" class="pane">
-      <div style="border:1px solid var(--accent);border-radius:10px;padding:12px;margin-bottom:14px;background:#0b2233">
-        <div style="font-weight:700;color:var(--accent2);margin-bottom:6px">📄 Importar PDF do horário</div>
-        <div class="row">
-          <label class="btn" style="cursor:pointer">📂 Escolher PDF…
-            <input type="file" accept="application/pdf,.pdf" id="pdfFile" style="display:none" onchange="onPdfFile(event)">
-          </label>
-          <span class="small" id="pdfStatus">Lê automaticamente a legenda e as 3 secções (Rotina / Urgência Externa / Prevenção). Só funciona com PDFs de <b>texto</b> (SISQUAL/PDFsharp), não com digitalizações.</span>
-        </div>
-        <div id="pdfPicker" style="display:none;margin-top:10px">
-          <label>O seu nome <select id="pdfEmpSel" onchange="applyPdfEmployee()" style="min-width:240px"></select></label>
-        </div>
+      <p class="small">Importa automaticamente a legenda e as 3 secções (Rotina / Urgência Externa / Prevenção)
+        de um PDF do horário. Só funciona com PDFs de <b>texto</b> (SISQUAL/PDFsharp), não com digitalizações.</p>
+      <div class="row">
+        <label class="btn" style="cursor:pointer">📂 Escolher PDF…
+          <input type="file" accept="application/pdf,.pdf" id="pdfFile" style="display:none" onchange="onPdfFile(event)">
+        </label>
+        <span class="small" id="pdfStatus"></span>
+      </div>
+      <div id="pdfPicker" style="display:none;margin-top:10px">
+        <label>O seu nome <select id="pdfEmpSel" onchange="applyPdfEmployee()" style="min-width:240px"></select></label>
       </div>
       <div id="parseWarnings"></div>
     </div>
@@ -294,11 +293,6 @@
   <!-- OUTPUT 1 -->
   <div id="summaryCard" class="card" style="display:none">
     <h2>Output 1 · Resumo mensal por categoria de pagamento</h2>
-    <div class="toolbar noprint">
-      <button class="btn secondary" onclick="copySummary()">📋 Copiar</button>
-      <button class="btn secondary" onclick="exportCSV('summary')">⬇️ CSV</button>
-      <button class="btn secondary" onclick="window.print()">🖨️ Imprimir</button>
-    </div>
     <div style="overflow-x:auto">
       <table id="summaryTable">
         <thead><tr><th>Categoria</th><th>Descrição / Tipo</th><th class="num">Horas</th>
@@ -315,7 +309,7 @@
     <h2>Output 2 · Detalhe individual por turno ER</h2>
     <div class="toolbar noprint">
       <button class="btn secondary" onclick="copyShifts()">📋 Copiar</button>
-      <button class="btn secondary" onclick="exportCSV('shifts')">⬇️ CSV</button>
+      <button class="btn secondary" onclick="exportCSV()">⬇️ CSV</button>
     </div>
     <div id="shiftsArea"></div>
   </div>
@@ -1935,30 +1929,18 @@ function toast(msg,err){const t=document.createElement('div');t.textContent=msg;
   t.style.cssText=`position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:${err?'var(--err)':'var(--ok)'};color:#06283b;padding:10px 18px;border-radius:10px;font-weight:700;z-index:99`;
   document.body.appendChild(t);setTimeout(()=>t.remove(),1800);}
 function copyToClipboard(text,ok){navigator.clipboard.writeText(text).then(()=>toast(ok||'Copiado!'),()=>toast('Falha ao copiar.',true));}
-function summaryToText(){if(!UI.lastResult)return '';const L=['Categoria\tDescrição\tHoras\tValor(€)'];
-  const base=currentMonthlyBase();
-  UI.lastResult.summary.forEach(r=>{const v=(r.key==='RW')?base:(r.eur||0); L.push(`${r.code}\t${r.desc}\t${r.hours.toFixed(2)}\t${((r.key==='RW'||r.isER||r.isTN)?v:0).toFixed(2)}`);});
-  return L.join('\n');}
 function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício\tFim\tTotalER\tTN\tValor(€)\tCategorias'];
   UI.lastResult.shifts.filter(s=>s.isER).forEach(s=>{const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
     L.push(`${formatPT(s.date)}\t${s.weekday}\t${s.start}\t${s.end}\t${(s.erDayH+s.erNightH).toFixed(2)}\t${s.tnH.toFixed(2)}\t${s.shiftEur.toFixed(2)}\t${c}`);});return L.join('\n');}
-function copySummary(){copyToClipboard(summaryToText(),'Resumo copiado!');}
 function copyShifts(){copyToClipboard(shiftsToText(),'Detalhe copiado!');}
-function exportCSV(which){
+function exportCSV(){
   if(!UI.lastResult){toast('Calcule primeiro.',true);return;}
-  const sep=';'; let csv,name; const base=currentMonthlyBase();
-  if(which==='summary'){
-    csv='Categoria;Descricao;Horas;Valor(EUR)\n'+UI.lastResult.summary.map(r=>{const v=(r.key==='RW')?base:(r.eur||0);
-      return [r.code,`"${r.desc}"`,r.hours.toFixed(2),((r.key==='RW'||r.isER||r.isTN)?v:0).toFixed(2)].join(sep);}).join('\n');
-    name='resumo_er_tn.csv';
-  } else {
-    csv='Data;Dia;Inicio;Fim;TotalER;TN;Valor(EUR);Categorias\n'+UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
+  const sep=';';
+  const csv='Data;Dia;Inicio;Fim;TotalER;TN;Valor(EUR);Categorias\n'+UI.lastResult.shifts.filter(s=>s.isER).map(s=>{
       const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
       return [formatPT(s.date),s.weekday,s.start,s.end,(s.erDayH+s.erNightH).toFixed(2),s.tnH.toFixed(2),s.shiftEur.toFixed(2),`"${c}"`].join(sep);}).join('\n');
-    name='detalhe_er_tn.csv';
-  }
   const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='detalhe_er_tn.csv';a.click();URL.revokeObjectURL(a.href);
 }
 
 /* ---- arranque ---- */
