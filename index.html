@@ -565,10 +565,14 @@ const ER_MULTIPLIER = {
   DOM: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} },
   FER: { diu:{first:1.75, seg:2.0}, not:{first:2.25, seg:2.5} }
 };
-/* Suplemento de Trabalho Noturno (TN) — fator sobre o €/hora ER.
-   VALIDADO com um recibo real: 22h → 224,56 € ⇒ 10,21 €/h
-   = 50% do €/hora normal (20,42) = 0,625 × €/hora ER (16,333). */
-const TN_UPLIFT = { pct:0.625, confirm:false };
+/* Suplemento de Trabalho Noturno (TN) — fator sobre o €/hora normal.
+   VALIDADO com um recibo real: 22h → 224,56 € ⇒ 10,21 €/h = 50% do €/hora
+   normal (20,42). NOTA: este fator aplica-se a erHourly()==currentHourly()
+   (o €/hora normal da tabela SIM) — corrigido de 0,625 para 0,5 porque o
+   0,625 tinha sido calibrado contra um erHourly() antigo (16,333 = 0,8×
+   normal), entretanto substituído; 0,625×16,333 ainda dava 10,21€/h, mas
+   0,625×20,42 já não (dava 12,76€/h). 0,5×20,42 = 10,21€/h, correto. */
+const TN_UPLIFT = { pct:0.5, confirm:false };
 
 /* O €/hora base do trabalho EXTRAORDINÁRIO (ER) é o valor/hora da tabela SIM
    correspondente à posição/regime (ver SALARY_TABLE). Os multiplicadores SIM
