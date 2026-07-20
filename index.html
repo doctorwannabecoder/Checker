@@ -276,9 +276,10 @@
       Linhas <b>DL119</b> (só quando ativo no ponto 3): a partir de um <b>bloco completo (48h)</b> de excesso sobre
       o limite legal anual (250h dedicação plena · 150h restantes regimes), essas horas deixam de valer o
       multiplicador ER normal e passam a <b>1×€/hora</b> + o valor do bloco (Art.º 4º/6, não cumulativo) — daí as
-      linhas de requalificação/estorno acima, que juntas refletem esse efeito no total. O estorno usa o €/hora
-      médio do ER do período como aproximação (a ferramenta não atribui os blocos a turnos concretos). O incentivo
-      não conta para o vencimento base nem outros suplementos (Art.º 7º).</p>
+      linhas de requalificação/estorno acima, que juntas refletem esse efeito no total. O estorno usa o valor REAL
+      dos últimos turnos ER do período (por ordem cronológica) sempre que há turnos inseridos no calendário; só cai
+      para o €/hora médio do período quando as horas são uma projeção sem turnos concretos (ex.: Output 3 a
+      extrapolar meses fora do período). O incentivo não conta para o vencimento base nem outros suplementos (Art.º 7º).</p>
     <details id="dl119WeeksDetails" style="margin-top:10px;display:none">
       <summary>DL 119/2026 — condição de majoração (Art.5º), janela deslizante de 8 semanas</summary>
       <p class="small">A declaração de disponibilidade para um novo bloco, também exigida por lei, não é avaliada
@@ -857,6 +858,32 @@ function dl119DeltaBlocks(totalBlocks, priorBlocks){
   return out;
 }
 
+// Lista, por ordem CRONOLÓGICA, todas as alocações ER reais dos turnos do
+// período (result.shifts já vem por ordem cronológica de computeMonth, e as
+// allocations de cada turno preservam a sua ordem natural) — usada para
+// descontar o ER pelo valor REAL de cada turno, em vez de uma média.
+function flattenErAllocations(shifts){
+  const out=[];
+  (shifts||[]).forEach(s=>{
+    (s.allocations||[]).forEach(a=>{ if(a.isER) out.push({hours:a.hours, eur:a.eur||0}); });
+  });
+  return out;
+}
+// Soma o valor REAL das últimas `hoursToTake` horas ER da lista cronológica
+// (as horas mais recentes do período são sempre as que ficam "em excesso" —
+// o excesso acumula à medida que o ano avança). Faz split proporcional na
+// alocação que for cortada a meio (seguro: eur/hours é constante dentro de
+// uma única alocação, não introduz erro).
+function sumTailErValue(erAllocs, hoursToTake){
+  if(hoursToTake<=0 || !erAllocs || !erAllocs.length) return 0;
+  let remaining=round2(hoursToTake), sum=0;
+  for(let i=erAllocs.length-1;i>=0 && remaining>0;i--){
+    const a=erAllocs[i];
+    if(a.hours<=remaining){ sum+=a.eur; remaining=round2(remaining-a.hours); }
+    else { sum+=round2(a.eur*(remaining/a.hours)); remaining=0; }
+  }
+  return round2(sum);
+}
 /* Calcula o incentivo DL119 a partir de um total de horas ER (anual real, ou
    projeção mensal×12) e do contexto salarial. `majBlocks` = Set opcional com
    os números de bloco confirmados manualmente como majorados (Art.5º/2-3).
@@ -864,7 +891,10 @@ function dl119DeltaBlocks(totalBlocks, priorBlocks){
    usado para isolar os blocos e o incentivo NOVOS deste período (ver
    `dl119DeltaBlocks`), sem duplicar o que já tinha sido pago em recibos
    anteriores. `opts.isLastBlock` = true ativa o pagamento proporcional do
-   bloco final mesmo com menos de 48h de excesso (Art.4º/4). */
+   bloco final mesmo com menos de 48h de excesso (Art.4º/4).
+   `ctx.erAllocs` (opcional) = lista cronológica real (flattenErAllocations) —
+   quando presente, o estorno usa o valor REAL de cada turno em vez da média;
+   omitir quando as horas são uma projeção/estimativa (sem turnos reais). */
 function computeDL119(totalErHoursYear, ctx, majBlocks, opts){
   majBlocks = majBlocks || new Set();
   opts = opts || {};
@@ -889,13 +919,20 @@ function computeDL119(totalErHoursYear, ctx, majBlocks, opts){
   // Requalificação (Art.4º/6): as horas NOVAS deste período (as únicas que
   // realmente estão nos turnos aqui inseridos) deixam de valer o
   // multiplicador ER normal e passam a 1×R simples. Para "descontar" o valor
-  // que já tinham sido calculadas ao preço ER normal, usa-se o €/hora médio
-  // do ER do período (aproximação — a ferramenta não atribui os blocos a
-  // turnos concretos).
+  // que já tinha sido calculado ao preço ER normal, usa-se o valor REAL das
+  // últimas horas ER do período (sumTailErValue, cronológico) quando há
+  // turnos reais disponíveis (ctx.erAllocs); só cai para a média €/hora do
+  // período (aproximação) quando as horas são uma projeção/estimativa sem
+  // turnos concretos (ex.: Output 3 a extrapolar meses não inseridos).
   result.requalifiedHours = round2(result.blocks.reduce((s,b)=>s+b.hours,0));
   result.requalifiedEurAt1x = round2(result.requalifiedHours * (ctx.hourly||0));
-  const avgErRate = (ctx.erEurTotal && ctx.erHoursTotal) ? (ctx.erEurTotal/ctx.erHoursTotal) : (ctx.hourly||0);
-  result.clawbackEur = round2(result.requalifiedHours * avgErRate);   // valor ER original (aprox.) a retirar
+  result.clawbackIsExact = !!(ctx.erAllocs && ctx.erAllocs.length);
+  if(result.clawbackIsExact){
+    result.clawbackEur = sumTailErValue(ctx.erAllocs, result.requalifiedHours);
+  } else {
+    const avgErRate = (ctx.erEurTotal && ctx.erHoursTotal) ? (ctx.erEurTotal/ctx.erHoursTotal) : (ctx.hourly||0);
+    result.clawbackEur = round2(result.requalifiedHours * avgErRate);   // valor ER original (aprox.) a retirar
+  }
   result.netAdjustmentEur = round2(result.requalifiedEurAt1x - result.clawbackEur + result.netIncentiveEur);
   return result;
 }
@@ -1361,7 +1398,7 @@ function calculate(){
   const weekendRow=document.getElementById('dl119WeekendConfirmRow');
   const lastBlockRow=document.getElementById('dl119LastBlockRow');
   const priorHoursRow=document.getElementById('dl119PriorHoursRow');
-  let dl119=null, windows=[], priorH=0, erHoursYear=0;
+  let dl119=null, dl119Projected=null, windows=[], priorH=0, erHoursYear=0;
   if(isDL119Enabled()){
     if(lastBlockRow) lastBlockRow.style.display='';
     // Modo Anual: o ano inteiro já está no calendário, não há "horas Extra
@@ -1384,13 +1421,32 @@ function calculate(){
     }
     const isLastBlock=!!(document.getElementById('chkDL119LastBlock')||{}).checked;
     erHoursYear=round2((result.totalErHours||0)+priorH);
-    const dctx={regime:ctx.regime, hourly:ctx.hourly, erEurTotal:result.erEur, erHoursTotal:result.totalErHours};
+    // erAllocs = turnos ER reais, por ordem cronológica -> permite ao
+    // computeDL119 descontar o ER pelo valor REAL de cada turno em vez de
+    // uma média (ver flattenErAllocations/sumTailErValue).
+    const erAllocs=flattenErAllocations(result.shifts);
+    const dctx={regime:ctx.regime, hourly:ctx.hourly, erEurTotal:result.erEur, erHoursTotal:result.totalErHours, erAllocs};
     // Confirmação global (fim de semana, últimas 8 semanas) sobrepõe-se à
     // confirmação manual por bloco: se confirmada, todos os blocos usam a
     // tabela majorada (Art.5º).
     const majBlocksToUse = UI.dl119WeekendConfirmed ? {has:()=>true} : UI.dl119MajBlocks;
     dl119=computeDL119(erHoursYear, dctx, majBlocksToUse, {priorHours:priorH, isLastBlock});
     windows=dl119WeekendWindows(result.weeklyStats);
+
+    // Projeção para o Output 3 quando o período não cobre o ano inteiro:
+    // assume-se que o ritmo médio deste período continua até Dezembro, e
+    // recalcula-se o DL119 (limiar + blocos) sobre esse total anual
+    // projetado — NÃO se limita a escalar o ajuste real ×12/n, porque o
+    // incentivo é não-linear (limiar de 150h/250h + escalões por bloco).
+    // Sem erAllocs (meses hipotéticos não têm turnos reais) -> cai para a
+    // média €/hora do período, escalada proporcionalmente.
+    const nMeses=numMeses();
+    if(nMeses<12){
+      const projectedErHoursYear=round2(priorH+(result.totalErHours||0)*(12/nMeses));
+      const projectedDctx={regime:ctx.regime, hourly:ctx.hourly,
+        erEurTotal:round2(result.erEur*(12/nMeses)), erHoursTotal:round2(result.totalErHours*(12/nMeses))};
+      dl119Projected=computeDL119(projectedErHoursYear, projectedDctx, majBlocksToUse, {priorHours:priorH, isLastBlock:true});
+    }
   } else {
     if(lastBlockRow) lastBlockRow.style.display='none';
     if(priorHoursRow) priorHoursRow.style.display='none';
@@ -1402,7 +1458,7 @@ function calculate(){
   // Output 2 (detalhe por turno) só faz sentido para 1 mês -> escondido em Anual/Variável.
   if(UI.periodMode!=='mensal'){ document.getElementById('shiftsCard').style.display='none'; }
   else { renderShifts(result.shifts.filter(s=>s.isER)); }
-  renderAnnual(result);
+  renderAnnual(result,dl119,dl119Projected);
   renderDL119Extras(dl119, windows, priorH, erHoursYear);
   // Atualiza a coluna "Semana" do calendário (ponto 4) com os totais agora calculados.
   renderManualCalendar();
@@ -1534,7 +1590,7 @@ function renderShifts(shifts){
   }).join('');
 }
 function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
-function renderAnnual(result){
+function renderAnnual(result,dl119,dl119Projected){
   document.getElementById('annualCard').style.display='block';
   const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
   const pb=periodBaseWithSubsidios();
@@ -1546,17 +1602,28 @@ function renderAnnual(result){
   const plenaSup=plenaSupplementOf(baseAnnual);
   // 12 meses inseridos: soma real, sem escalar. Menos de 12: extrapola ×(12/n).
   const extraAnnual = full ? extra : round2(extra*(12/n));
-  const total=baseAnnual+extraAnnual;
+  // DL119: no período completo (12 meses reais) soma-se o ajuste real
+  // (igual ao Output 1). Com menos de 12 meses, NÃO se escala o ajuste real
+  // ×12/n (o incentivo não é linear — tem limiar de 150h/250h e escalões por
+  // bloco) — em vez disso usa-se dl119Projected, recalculado sobre um total
+  // anual projetado (ver calculate()).
+  const dl119Eur = full ? (dl119&&dl119.applies?dl119.netAdjustmentEur:0)
+                         : (dl119Projected&&dl119Projected.applies?dl119Projected.netAdjustmentEur:0);
+  const dl119Applies = full ? !!(dl119&&dl119.applies) : !!(dl119Projected&&dl119Projected.applies);
+  const total=baseAnnual+extraAnnual+dl119Eur;
   const baseDetail = `${eur(pb.monthlyBase)} × ${pb.n}`+
     (pb.subJune>0?` + féria ${pb.firstHalf}/6`:'')+
     (pb.subDec>0?` + Natal ${pb.secondHalf}/6`:'');
   const supRow=plenaSup>0?`<tr><td class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base)</td><td class="num small">incluído acima</td><td class="num">${eur(plenaSup)}</td></tr>`:'';
+  const dl119Row = dl119Applies ? `<tr><td>DL119/2026 ${full?'(dados inseridos)':'(projeção — ritmo do período mantido até Dez.)'}</td>` +
+    `<td class="num small">${full?'ajuste real':'recalculado sobre horas projetadas'}</td><td class="num">${eur(dl119Eur)}</td></tr>` : '';
   tb.innerHTML=
     `<tr><td>Vencimento base${pb.n>1?` (${pb.n} meses)`:''} + subsídios</td><td class="num small">${baseDetail}</td><td class="num">${eur(baseAnnual)}</td></tr>`+
     supRow+
     `<tr><td>Extra ER+TN ${full?`(${n} meses inseridos)`:`(${n} ${n===1?'mês':'meses'} → projeção ×12/${n})`}</td>`+
-    `<td class="num small">${full?'soma real':eur(extra)+` × 12/${n}`}</td><td class="num">${eur(extraAnnual)}</td></tr>`;
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, base real${full?', dados inseridos':' + extra estimado'})</td><td class="num">${eur(total)}</td></tr>`;
+    `<td class="num small">${full?'soma real':eur(extra)+` × 12/${n}`}</td><td class="num">${eur(extraAnnual)}</td></tr>`+
+    dl119Row;
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, base real${full?', dados inseridos':' + extra e DL119 estimados'})</td><td class="num">${eur(total)}</td></tr>`;
 }
 
 // Complementa renderSummary (que já mostra as linhas/valores DL119 na
