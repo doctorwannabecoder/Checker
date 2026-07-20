@@ -931,14 +931,36 @@ function erHourly(){
   if(currentCategory()==='ife2') return round2((SALARY_TABLE.assistente.regimes.geral.h||0)*0.8);
   return currentHourly();
 }
-// Dedicação Plena: a tabela SIM já inclui, no valor mensal/hora do regime
-// "plena", o suplemento de disponibilidade de 25% sobre o ordenado base
-// (confirmado: plena.m = geral.m × 1,25 em todas as categorias). Esta função
-// só DECOMPÕE o valor já existente para o mostrar separadamente — não soma
-// nada de novo (evita duplicar o suplemento).
-function plenaSupplementMonthly(){
-  if(currentRegime()!=='plena') return 0;
-  return round2(currentMonthlyBase()*0.2); // = m − m/1.25
+// Vencimento base do PERÍODO selecionado (não apenas de 1 mês): soma o
+// vencimento mensal por cada mês do período (selectedMonths()) + subsídio de
+// férias (só se Junho estiver incluído no período, proporcional aos meses
+// Jan-Jun realmente presentes) + subsídio de Natal (só se Dezembro estiver
+// incluído, proporcional aos meses Jul-Dez presentes). Mecanismo geral de
+// 14×/ano — aplica-se a QUALQUER regime, não só Dedicação Plena (a Plena só
+// "vem incluída" porque o seu valor/mês já tem o suplemento de 25% embutido:
+// plena.m = geral.m × 1,25 em todas as categorias, confirmado).
+// Ex.: período Mar-Ago (6 meses) -> Jan-Jun presentes = Mar,Abr,Mai,Jun (4 de
+// 6) -> subsídio de férias = 4/6 do vencimento mensal; Dezembro não está no
+// período -> sem subsídio de Natal.
+function periodBaseWithSubsidios(){
+  const monthlyBase=currentMonthlyBase();
+  const months=selectedMonths();
+  const n=months.length;
+  const firstHalf=months.filter(mo=>mo.m>=1&&mo.m<=6).length;
+  const secondHalf=months.filter(mo=>mo.m>=7&&mo.m<=12).length;
+  const hasJune=months.some(mo=>mo.m===6);
+  const hasDecember=months.some(mo=>mo.m===12);
+  const regular=round2(monthlyBase*n);
+  const subJune=hasJune?round2(monthlyBase*firstHalf/6):0;
+  const subDec=hasDecember?round2(monthlyBase*secondHalf/6):0;
+  return {monthlyBase, n, firstHalf, secondHalf, hasJune, hasDecember,
+    regular, subJune, subDec, total:round2(regular+subJune+subDec)};
+}
+// Suplemento de Dedicação Plena (25% do ordenado base) contido num dado
+// montante de vencimento base — usado para DECOMPOR (mostrar separadamente)
+// o valor já incluído em `baseAmount`, sem somar nada de novo.
+function plenaSupplementOf(baseAmount){
+  return currentRegime()==='plena' ? round2(baseAmount*0.2) : 0;
 }
 function eur(n){return (Math.round((n+Number.EPSILON)*100)/100).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
 
@@ -1403,7 +1425,8 @@ function codeBadges(a){
 function renderSummary(summary,result,dl119){
   document.getElementById('summaryCard').style.display='block';
   const tb=document.querySelector('#summaryTable tbody'), tf=document.querySelector('#summaryTable tfoot');
-  const baseEur=currentMonthlyBase();
+  const pb=periodBaseWithSubsidios();
+  const baseEur=pb.total;
   // garantir uma linha de vencimento base, mesmo sem dias regulares
   const rows=summary.slice();
   if(!rows.some(r=>r.key==='RW')) rows.unshift({key:'RW',code:'Base',desc:'Remuneração base',hours:0,eur:0,isER:false,isTN:false,confirm:false});
@@ -1419,7 +1442,8 @@ function renderSummary(summary,result,dl119){
     const showVal=(isBase||r.isER||r.isTN)?eur(val):'—';
     const rate=isBase?hourlyBase:(r.mult?round2(hourlyExtra*r.mult):null);
     const showRate=(rate!=null)?eur(rate)+(r.mult&&!isBase?` (×${r.mult})`:''):'—';
-    const note=isBase?'Vencimento base mensal':(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—')));
+    const baseNote = pb.n>1 ? `Vencimento base · ${pb.n} meses do período` : 'Vencimento base mensal';
+    const note=isBase?baseNote:(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—')));
     return `<tr>
       <td><span class="badge code">${r.code}</span></td>
       <td>${r.desc}${codeBadges(r)}</td>
@@ -1464,14 +1488,17 @@ function renderSummary(summary,result,dl119){
   }
   tb.innerHTML=bodyHtml;
 
-  const plenaSup=(currentRegime()==='plena')?plenaSupplementMonthly():0;
+  const plenaSup=plenaSupplementOf(baseEur);
   const totalExtra=(result?result.totalExtraEur:0)+dl119Extra;
   const totalEur=baseEur+totalExtra;
-  const supRow=plenaSup>0?`<tr><td colspan="4" class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base, pago 14×/ano)</td><td class="num">${eur(plenaSup)}</td><td></td></tr>`:'';
-  tf.innerHTML=supRow+`<tr style="font-weight:700;background:#0b1220">
+  const subRows=
+    (pb.subJune>0?`<tr><td colspan="4" class="small">— dos quais subsídio de férias (${pb.firstHalf}/6 meses Jan-Jun no período)</td><td class="num">${eur(pb.subJune)}</td><td></td></tr>`:'')+
+    (pb.subDec>0?`<tr><td colspan="4" class="small">— dos quais subsídio de Natal (${pb.secondHalf}/6 meses Jul-Dez no período)</td><td class="num">${eur(pb.subDec)}</td><td></td></tr>`:'');
+  const supRow=plenaSup>0?`<tr><td colspan="4" class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base)</td><td class="num">${eur(plenaSup)}</td><td></td></tr>`:'';
+  tf.innerHTML=subRows+supRow+`<tr style="font-weight:700;background:#0b1220">
     <td colspan="4">TOTAIS · extra ER+TN${dl119Applies?'+DL119':''}</td>
     <td class="num">${eur(totalExtra)}</td>
-    <td class="small">Base ${eur(baseEur)} + extra = <b>${eur(totalEur)}</b> bruto/mês</td></tr>`;
+    <td class="small">Base ${eur(baseEur)} + extra = <b>${eur(totalEur)}</b> bruto</td></tr>`;
 }
 function renderShifts(shifts){
   document.getElementById('shiftsCard').style.display='block';
@@ -1497,20 +1524,26 @@ function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${
 function renderAnnual(result){
   document.getElementById('annualCard').style.display='block';
   const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
-  const base=currentMonthlyBase(), extra=result.totalExtraEur||0, n=numMeses(), full=(n===12);
-  const baseAnnual=base*14;
-  const plenaSup=(currentRegime()==='plena')?plenaSupplementMonthly():0;
-  const plenaSupAnnual=plenaSup*14;
+  const pb=periodBaseWithSubsidios();
+  const extra=result.totalExtraEur||0, n=numMeses(), full=(n===12);
+  // Vencimento base + subsídios: SEMPRE o valor real do período inserido
+  // (nunca extrapolado — o vencimento mensal é determinístico, ao contrário
+  // das horas extra). Ver periodBaseWithSubsidios().
+  const baseAnnual=pb.total;
+  const plenaSup=plenaSupplementOf(baseAnnual);
   // 12 meses inseridos: soma real, sem escalar. Menos de 12: extrapola ×(12/n).
   const extraAnnual = full ? extra : round2(extra*(12/n));
   const total=baseAnnual+extraAnnual;
-  const supRow=plenaSup>0?`<tr><td class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base)</td><td class="num small">${eur(plenaSup)} × 14</td><td class="num">${eur(plenaSupAnnual)}</td></tr>`:'';
+  const baseDetail = `${eur(pb.monthlyBase)} × ${pb.n}`+
+    (pb.subJune>0?` + féria ${pb.firstHalf}/6`:'')+
+    (pb.subDec>0?` + Natal ${pb.secondHalf}/6`:'');
+  const supRow=plenaSup>0?`<tr><td class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base)</td><td class="num small">incluído acima</td><td class="num">${eur(plenaSup)}</td></tr>`:'';
   tb.innerHTML=
-    `<tr><td>Vencimento base</td><td class="num small">${eur(base)} × 14</td><td class="num">${eur(baseAnnual)}</td></tr>`+
+    `<tr><td>Vencimento base${pb.n>1?` (${pb.n} meses)`:''} + subsídios</td><td class="num small">${baseDetail}</td><td class="num">${eur(baseAnnual)}</td></tr>`+
     supRow+
     `<tr><td>Extra ER+TN ${full?`(${n} meses inseridos)`:`(${n} ${n===1?'mês':'meses'} → projeção ×12/${n})`}</td>`+
     `<td class="num small">${full?'soma real':eur(extra)+` × 12/${n}`}</td><td class="num">${eur(extraAnnual)}</td></tr>`;
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, ${full?'dados inseridos':'estimativa'})</td><td class="num">${eur(total)}</td></tr>`;
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, base real${full?', dados inseridos':' + extra estimado'})</td><td class="num">${eur(total)}</td></tr>`;
 }
 
 // Complementa renderSummary (que já mostra as linhas/valores DL119 na
