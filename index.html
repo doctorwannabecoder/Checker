@@ -1427,9 +1427,19 @@ function renderSummary(summary,result,dl119){
   const tb=document.querySelector('#summaryTable tbody'), tf=document.querySelector('#summaryTable tfoot');
   const pb=periodBaseWithSubsidios();
   const baseEur=pb.total;
+  const plenaSup=plenaSupplementOf(baseEur);
+  const baseOnly=round2(baseEur-plenaSup);
   // garantir uma linha de vencimento base, mesmo sem dias regulares
   const rows=summary.slice();
   if(!rows.some(r=>r.key==='RW')) rows.unshift({key:'RW',code:'Base',desc:'Remuneração base',hours:0,eur:0,isER:false,isTN:false,confirm:false});
+  // Suplemento de Dedicação Plena mostrado como linha própria (não só como
+  // nota do rodapé) para que o valor visivelmente some ao total, tal como a
+  // linha Base — a tabela SIM já inclui este valor no vencimento do regime
+  // "plena", por isso é retirado da linha Base (baseOnly) e mostrado aqui.
+  if(plenaSup>0){
+    const rwIdx=rows.findIndex(r=>r.key==='RW');
+    rows.splice(rwIdx+1,0,{key:'PLENA_SUP',code:'RegHAcr. Ded.Plena',desc:'Suplemento Dedicação Plena',hours:0,eur:0,isER:false,isTN:false,confirm:false});
+  }
   if(!rows.length){tb.innerHTML=`<tr><td colspan="5" class="muted">Sem horas.</td></tr>`;tf.innerHTML='';return;}
   // Base = valor/hora normal da categoria (vencimento); Extra = valor/hora
   // usado para ER/TN, que pode diferir do normal (ex.: Internato Anos 4-6 —
@@ -1438,12 +1448,13 @@ function renderSummary(summary,result,dl119){
   const hourlyBase=currentHourly(), hourlyExtra=erHourly();
   let bodyHtml=rows.map(r=>{
     const isBase=(r.key==='RW');
-    const val=isBase?baseEur:r.eur;
-    const showVal=(isBase||r.isER||r.isTN)?eur(val):'—';
-    const rate=isBase?hourlyBase:(r.mult?round2(hourlyExtra*r.mult):null);
+    const isPlenaSup=(r.key==='PLENA_SUP');
+    const val=isBase?baseOnly:(isPlenaSup?plenaSup:r.eur);
+    const showVal=(isBase||isPlenaSup||r.isER||r.isTN)?eur(val):'—';
+    const rate=isBase?hourlyBase:(isPlenaSup?null:(r.mult?round2(hourlyExtra*r.mult):null));
     const showRate=(rate!=null)?eur(rate)+(r.mult&&!isBase?` (×${r.mult})`:''):'—';
     const baseNote = pb.n>1 ? `Vencimento base · ${pb.n} meses do período` : 'Vencimento base mensal';
-    const note=isBase?baseNote:(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—')));
+    const note=isBase?baseNote:(isPlenaSup?'Regime de Dedicação Plena (25% sobre o vencimento base, pago 14×/ano)':(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—'))));
     return `<tr>
       <td><span class="badge code">${r.code}</span></td>
       <td>${r.desc}${codeBadges(r)}</td>
@@ -1488,15 +1499,13 @@ function renderSummary(summary,result,dl119){
   }
   tb.innerHTML=bodyHtml;
 
-  const plenaSup=plenaSupplementOf(baseEur);
   const totalExtra=(result?result.totalExtraEur:0)+dl119Extra;
   const totalEur=baseEur+totalExtra;
   const subRows=
     (pb.subJune>0?`<tr><td colspan="4" class="small">— dos quais subsídio de férias (${pb.firstHalf}/6 meses Jan-Jun no período)</td><td class="num">${eur(pb.subJune)}</td><td></td></tr>`:'')+
     (pb.subDec>0?`<tr><td colspan="4" class="small">— dos quais subsídio de Natal (${pb.secondHalf}/6 meses Jul-Dez no período)</td><td class="num">${eur(pb.subDec)}</td><td></td></tr>`:'');
-  const supRow=plenaSup>0?`<tr><td colspan="4" class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base)</td><td class="num">${eur(plenaSup)}</td><td></td></tr>`:'';
   const plenaNote = plenaSup>0 ? ' (inclui suplemento Dedicação Plena)' : '';
-  tf.innerHTML=subRows+supRow+`<tr style="font-weight:700;background:#0b1220">
+  tf.innerHTML=subRows+`<tr style="font-weight:700;background:#0b1220">
     <td colspan="4">TOTAIS · extra ER+TN${dl119Applies?'+DL119':''}</td>
     <td class="num">${eur(totalExtra)}</td>
     <td class="small">Base ${eur(baseEur)} + extra</td></tr>
