@@ -912,7 +912,14 @@ function currentSalary(){
 function currentHourly(){return currentSalary().h||0;} // valor/hora da tabela SIM p/ posição/regime
 function currentMonthlyBase(){return currentSalary().m||0;}
 // €/hora base do trabalho extraordinário (ER) = valor/hora da tabela (posição/regime).
-function erHourly(){return currentHourly();}
+// EXCEÇÃO: Internato Médico Anos 4-6 (ife2) — as Horas Extra (E) são pagas a
+// 80% do valor/hora do Assistente em regime Geral, não ao valor/hora do
+// próprio internato (regra específica deste grupo; por confirmar). Afeta
+// tanto ER como TN, já que ambos derivam de ctx.hourly=erHourly().
+function erHourly(){
+  if(currentCategory()==='ife2') return round2((SALARY_TABLE.assistente.regimes.geral.h||0)*0.8);
+  return currentHourly();
+}
 // Dedicação Plena: a tabela SIM já inclui, no valor mensal/hora do regime
 // "plena", o suplemento de disponibilidade de 25% sobre o ordenado base
 // (confirmado: plena.m = geral.m × 1,25 em todas as categorias). Esta função
@@ -1026,7 +1033,11 @@ function updateWeeklyHint(){
   if(wh) wh.textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
   document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h (Seg–Dom) · base diária ${dailyContractHours()} h`;
   const sh=document.getElementById('salaryHint');
-  if(sh) sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/hora ${eur(currentHourly())} (base dos multiplicadores ER)`;
+  if(sh){
+    const hb=currentHourly(), he=erHourly();
+    const extraNote = (he!==hb) ? ` · €/hora ER/TN ${eur(he)} (Internato Anos 4-6 = 80% Assistente Geral)` : ' (base dos multiplicadores ER)';
+    sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/hora ${eur(hb)}${extraNote}`;
+  }
 }
 
 function renderConfirmBanner(){
@@ -1310,12 +1321,16 @@ function renderSummary(summary,result,dl119){
   const rows=summary.slice();
   if(!rows.some(r=>r.key==='RW')) rows.unshift({key:'RW',code:'Base',desc:'Remuneração base',hours:0,eur:0,isER:false,isTN:false,confirm:false});
   if(!rows.length){tb.innerHTML=`<tr><td colspan="5" class="muted">Sem horas.</td></tr>`;tf.innerHTML='';return;}
-  const hourly=currentHourly();
+  // Base = valor/hora normal da categoria (vencimento); Extra = valor/hora
+  // usado para ER/TN, que pode diferir do normal (ex.: Internato Anos 4-6 —
+  // ver erHourly()). Mantém a coluna €/hora consistente com o que foi
+  // realmente usado para calcular cada linha.
+  const hourlyBase=currentHourly(), hourlyExtra=erHourly();
   let bodyHtml=rows.map(r=>{
     const isBase=(r.key==='RW');
     const val=isBase?baseEur:r.eur;
     const showVal=(isBase||r.isER||r.isTN)?eur(val):'—';
-    const rate=isBase?hourly:(r.mult?round2(hourly*r.mult):null);
+    const rate=isBase?hourlyBase:(r.mult?round2(hourlyExtra*r.mult):null);
     const showRate=(rate!=null)?eur(rate)+(r.mult&&!isBase?` (×${r.mult})`:''):'—';
     const note=isBase?'Vencimento base mensal':(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—')));
     return `<tr>
@@ -1337,7 +1352,7 @@ function renderSummary(summary,result,dl119){
       <td><span class="badge code">DL119</span></td>
       <td>Requalificação a 1× (Art.4º/6, substitui o multiplicador ER normal)</td>
       <td class="num">${dl119.requalifiedHours.toFixed(2)}</td>
-      <td class="num small">${eur(hourly)}</td>
+      <td class="num small">${eur(hourlyExtra)}</td>
       <td class="num">${eur(dl119.requalifiedEurAt1x)}</td>
       <td class="small">Horas do(s) bloco(s) DL119 abaixo</td></tr>`;
     const clawRow=`<tr>
