@@ -812,7 +812,11 @@ function dl119BuildBlocks(excessHours, majBlocks, allowPartialLast){
     out.blocks.push({n, hours:DL119_RULES.blockHours, pct, majorado, value, partial:false});
     out.premium += value;
   }
-  if (remainder > 0){
+  // O bloco final incompleto só entra quando esta escala está confirmada
+  // como o último bloco autorizado do ano civil (Art.4º/4, allowPartialLast).
+  // Sem essa confirmação, horas que ainda não fecharam um bloco de 48h ficam
+  // de fora — só contam quando (e se) completarem um bloco num período futuro.
+  if (remainder > 0 && allowPartialLast){
     const n = completedBlocks+1;
     const majorado = majBlocks.has(n);
     const pct = dl119BlockPct(n, majorado);
