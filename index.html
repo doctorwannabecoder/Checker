@@ -836,15 +836,36 @@ function dl119BuildBlocks(excessHours, majBlocks, allowPartialLast){
   return out;
 }
 
+// A partir dos blocos TOTAIS (ano civil) e dos blocos PRÉVIOS (já contados
+// antes deste período), devolve só a parte NOVA de cada bloco — o "bloco
+// ativo" que este período está a preencher ou a completar. Um bloco cujas
+// horas totais já tinham sido inteiramente cobertas por priorBlocks não
+// aparece (delta 0); um bloco começado antes e completado agora aparece só
+// com as horas novas. Isto substitui a tabela completa do ano + uma linha de
+// subtração por uma tabela só com o(s) bloco(s) relevante(s) deste período.
+function dl119DeltaBlocks(totalBlocks, priorBlocks){
+  const priorByN={}; priorBlocks.forEach(b=>{ priorByN[b.n]=b.hours; });
+  const vencimentoBase=currentMonthlyBase();
+  const out=[];
+  totalBlocks.forEach(b=>{
+    const priorHoursInBlock=priorByN[b.n]||0;
+    const deltaHours=round2(b.hours-priorHoursInBlock);
+    if(deltaHours<=0) return;   // bloco inteiro já contado num período anterior
+    const value=round2((b.pct/100 * vencimentoBase / DL119_RULES.blockHours) * deltaHours);
+    out.push({n:b.n, hours:deltaHours, pct:b.pct, majorado:b.majorado, value,
+      partial:b.partial, continuing:priorHoursInBlock>0});
+  });
+  return out;
+}
+
 /* Calcula o incentivo DL119 a partir de um total de horas ER (anual real, ou
    projeção mensal×12) e do contexto salarial. `majBlocks` = Set opcional com
    os números de bloco confirmados manualmente como majorados (Art.5º/2-3).
    `opts.priorHours` = horas Extra já realizadas ANTES deste período (ponto 3) —
-   usado para isolar o incentivo NOVO deste período, subtraindo o que já
-   tinha sido "ganho" (e presumivelmente pago) em períodos anteriores, para
-   não duplicar o valor de blocos já liquidados noutros recibos.
-   `opts.isLastBlock` = true ativa o pagamento proporcional do bloco final
-   mesmo com menos de 48h de excesso (Art.4º/4). */
+   usado para isolar os blocos e o incentivo NOVOS deste período (ver
+   `dl119DeltaBlocks`), sem duplicar o que já tinha sido pago em recibos
+   anteriores. `opts.isLastBlock` = true ativa o pagamento proporcional do
+   bloco final mesmo com menos de 48h de excesso (Art.4º/4). */
 function computeDL119(totalErHoursYear, ctx, majBlocks, opts){
   majBlocks = majBlocks || new Set();
   opts = opts || {};
@@ -853,30 +874,25 @@ function computeDL119(totalErHoursYear, ctx, majBlocks, opts){
   const limit = dl119AnnualLimit(ctx.regime);
   const excess = Math.max(0, round2(totalErHoursYear - limit));
   const priorExcess = Math.max(0, round2(priorHours - limit));
-  const result = { limit, excess, applies:false, blocks:[], incentiveEur:0,
-    priorIncentiveEur:0, netIncentiveEur:0, isLastBlock,
+  const result = { limit, excess, applies:false, blocks:[], netIncentiveEur:0, isLastBlock,
     requalifiedHours:0, requalifiedEurAt1x:0, clawbackEur:0, netAdjustmentEur:0 };
 
   const totalCalc = dl119BuildBlocks(excess, majBlocks, isLastBlock);
   if (!totalCalc.blocks.length) return result;   // Art.4º/3 — abaixo do 1º bloco completo (e não é o último do ano)
   result.applies = true;
-  result.blocks = totalCalc.blocks;
-  result.incentiveEur = totalCalc.premium;   // valor total acumulado (histórico, ano civil)
 
-  // Parte já correspondente a horas anteriores a este período — subtrai-se
-  // para isolar só o incentivo NOVO gerado pelas horas deste mês (evita
-  // voltar a somar blocos já pagos em recibos anteriores). O "último bloco"
-  // só pode ser decidido no período em que a escala realmente termina, por
-  // isso o cálculo do que já era "prévio" nunca assume pagamento proporcional.
+  // Blocos já contados antes deste período (nunca proporcionais — o "último
+  // bloco" só pode ser decidido no período em que a escala realmente termina).
   const priorCalc = dl119BuildBlocks(priorExcess, majBlocks, false);
-  result.priorIncentiveEur = priorCalc.premium;
-  result.netIncentiveEur = round2(result.incentiveEur - result.priorIncentiveEur);
+  result.blocks = dl119DeltaBlocks(totalCalc.blocks, priorCalc.blocks);
+  result.netIncentiveEur = round2(result.blocks.reduce((s,b)=>s+b.value,0));
 
-  // Requalificação (Art.4º/6): as horas dentro de blocos completos/parciais
-  // deixam de valer o multiplicador ER normal e passam a 1×R simples.
-  // Para "descontar" o valor que já tinham sido calculadas ao preço ER normal,
-  // usa-se o €/hora médio do ER do período (aproximação — a ferramenta não
-  // atribui os blocos a turnos concretos, só ao total anual).
+  // Requalificação (Art.4º/6): as horas NOVAS deste período (as únicas que
+  // realmente estão nos turnos aqui inseridos) deixam de valer o
+  // multiplicador ER normal e passam a 1×R simples. Para "descontar" o valor
+  // que já tinham sido calculadas ao preço ER normal, usa-se o €/hora médio
+  // do ER do período (aproximação — a ferramenta não atribui os blocos a
+  // turnos concretos).
   result.requalifiedHours = round2(result.blocks.reduce((s,b)=>s+b.hours,0));
   result.requalifiedEurAt1x = round2(result.requalifiedHours * (ctx.hourly||0));
   const avgErRate = (ctx.erEurTotal && ctx.erHoursTotal) ? (ctx.erEurTotal/ctx.erHoursTotal) : (ctx.hourly||0);
@@ -1385,20 +1401,20 @@ function renderDL119(dl119, windows, priorH, erHoursYear){
   const lastBlockBadge = dl119.isLastBlock ? ` <span class="badge code">último bloco do ano · pagamento proporcional</span>` : '';
   sum.innerHTML=`<div class="alert warn">
     Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
-    Excesso: <b>${dl119.excess.toFixed(1)} h</b> · Horas requalificadas (1×€/h, sem multiplicador ER): <b>${dl119.requalifiedHours.toFixed(1)} h</b>${lastBlockBadge}<br>
-    <span class="small">Incentivo acumulado (ano civil, todos os blocos): ${eur(dl119.incentiveEur)} − já correspondente a períodos anteriores: ${eur(dl119.priorIncentiveEur)} = <b>incentivo novo deste período: ${eur(dl119.netIncentiveEur)}</b></span><br>
-    <span class="small">Ajuste líquido aproximado deste período: ${eur(dl119.requalifiedEurAt1x)} (1×) − ${eur(dl119.clawbackEur)} (retira valor ER já calculado ao preço normal, aproximado pela média €/h ER do período) + ${eur(dl119.netIncentiveEur)} (incentivo novo) = <b>${eur(dl119.netAdjustmentEur)}</b></span></div>`;
+    Excesso: <b>${dl119.excess.toFixed(1)} h</b> · Horas requalificadas neste período (1×€/h, sem multiplicador ER): <b>${dl119.requalifiedHours.toFixed(1)} h</b>${lastBlockBadge}<br>
+    <span class="small">Ajuste líquido aproximado deste período: ${eur(dl119.requalifiedEurAt1x)} (1×) − ${eur(dl119.clawbackEur)} (retira valor ER já calculado ao preço normal, aproximado pela média €/h ER do período) + ${eur(dl119.netIncentiveEur)} (incentivo do(s) bloco(s) abaixo) = <b>${eur(dl119.netAdjustmentEur)}</b></span></div>`;
 
   const tb=document.querySelector('#dl119BlocksTable tbody'), tf=document.querySelector('#dl119BlocksTable tfoot');
-  tb.innerHTML=dl119.blocks.map(b=>`<tr>
-    <td>${b.n}º${b.partial?' (parcial)':''}</td>
+  tb.innerHTML=dl119.blocks.map(b=>{
+    const status = b.partial ? ' (parcial — bloco iniciado, ainda por completar)' : (b.continuing ? ' (concluído este período)' : '');
+    return `<tr>
+    <td>${b.n}º${status}</td>
     <td class="num">${b.hours.toFixed(2)}</td>
     <td class="num">${b.pct.toFixed(2)}%</td>
     <td class="center"><input type="checkbox" data-blockn="${b.n}" ${b.majorado?'checked':''} onchange="toggleDL119Block(${b.n})"></td>
-    <td class="num">${eur(b.value)}</td></tr>`).join('');
-  tf.innerHTML=`<tr style="background:#0b1220"><td colspan="4">Total acumulado (ano civil)</td><td class="num">${eur(dl119.incentiveEur)}</td></tr>`+
-    (dl119.priorIncentiveEur>0?`<tr><td colspan="4" class="small">− já correspondente a períodos anteriores</td><td class="num">${eur(dl119.priorIncentiveEur)}</td></tr>`:'')+
-    `<tr style="font-weight:700;background:#0b1220"><td colspan="4">INCENTIVO NOVO DESTE PERÍODO</td><td class="num">${eur(dl119.netIncentiveEur)}</td></tr>`;
+    <td class="num">${eur(b.value)}</td></tr>`;
+  }).join('');
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="4">INCENTIVO DESTE PERÍODO</td><td class="num">${eur(dl119.netIncentiveEur)}</td></tr>`;
 
   const wtb=document.querySelector('#dl119WeeksTable tbody');
   wtb.innerHTML=windows.map(w=>`<tr class="${w.qualifies?'':'muted'}">
