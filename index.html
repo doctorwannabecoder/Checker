@@ -1495,12 +1495,13 @@ function renderSummary(summary,result,dl119){
     (pb.subJune>0?`<tr><td colspan="4" class="small">— dos quais subsídio de férias (${pb.firstHalf}/6 meses Jan-Jun no período)</td><td class="num">${eur(pb.subJune)}</td><td></td></tr>`:'')+
     (pb.subDec>0?`<tr><td colspan="4" class="small">— dos quais subsídio de Natal (${pb.secondHalf}/6 meses Jul-Dez no período)</td><td class="num">${eur(pb.subDec)}</td><td></td></tr>`:'');
   const supRow=plenaSup>0?`<tr><td colspan="4" class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base)</td><td class="num">${eur(plenaSup)}</td><td></td></tr>`:'';
+  const plenaNote = plenaSup>0 ? ' (inclui suplemento Dedicação Plena)' : '';
   tf.innerHTML=subRows+supRow+`<tr style="font-weight:700;background:#0b1220">
     <td colspan="4">TOTAIS · extra ER+TN${dl119Applies?'+DL119':''}</td>
     <td class="num">${eur(totalExtra)}</td>
     <td class="small">Base ${eur(baseEur)} + extra</td></tr>
   <tr style="font-weight:700;background:#132030">
-    <td colspan="4">TOTAL · base + extra</td>
+    <td colspan="4">TOTAL · base + extra${plenaNote}</td>
     <td class="num" colspan="2">${eur(totalEur)} bruto</td></tr>`;
 }
 function renderShifts(shifts){
@@ -1557,9 +1558,18 @@ function renderDL119Extras(dl119, windows, priorH, erHoursYear){
   const sumEl=document.getElementById('dl119Summary');
   const detailsEl=document.getElementById('dl119WeeksDetails');
   if(!dl119){ sumEl.style.display='none'; detailsEl.style.display='none'; return; }
-  sumEl.style.display='block'; detailsEl.style.display='';
+  sumEl.style.display='block';
   const label = priorH>0 ? `período inserido + ${priorH.toFixed(1)}h já feitas antes` : 'período inserido';
-  if(!dl119.applies){
+  if(dl119.excess<=0){
+    // Horas ER (ano) ainda não ultrapassam o limite mínimo anual (150h/250h
+    // consoante o regime) — o incentivo nem entra em jogo, por isso a
+    // condição de majoração (Art.5º) não é relevante e fica escondida.
+    detailsEl.style.display='none';
+    sumEl.innerHTML=`<div class="alert ok">
+      DL 119/2026 · não aplicável — Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> abaixo do limite mínimo anual
+      (<b>${dl119.limit} h/ano</b>).</div>`;
+  } else if(!dl119.applies){
+    detailsEl.style.display='';
     const lastBlockNote = dl119.isLastBlock
       ? ' Marcado como último bloco do ano, mas não há horas de excesso a pagar (0h).'
       : ' Ainda não atinge o 1º bloco completo (48h) — só se aplica antes disso se esta escala for marcada como o último bloco autorizado do ano civil (ponto 3).';
@@ -1567,6 +1577,7 @@ function renderDL119Extras(dl119, windows, priorH, erHoursYear){
       DL 119/2026 · Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
       Excesso: <b>${dl119.excess.toFixed(1)} h</b> — não se aplica o incentivo.${lastBlockNote}</div>`;
   } else {
+    detailsEl.style.display='';
     const lastBlockBadge = dl119.isLastBlock ? ` <span class="badge code">último bloco do ano · pagamento proporcional</span>` : '';
     sumEl.innerHTML=`<div class="alert warn">
       DL 119/2026 · Limite legal: <b>${dl119.limit} h/ano</b> · Horas ER (${label}): <b>${erHoursYear.toFixed(1)} h</b> ·
