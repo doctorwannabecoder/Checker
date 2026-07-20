@@ -160,6 +160,11 @@
 <main>
   <div id="confirmBanner"></div>
 
+  <div class="tabs">
+    <button id="tabPeriodMensal" class="active" onclick="switchPeriodMode('mensal')">📅 Mensal</button>
+    <button id="tabPeriodAnual" onclick="switchPeriodMode('anual')">📆 Anual</button>
+  </div>
+
   <!-- 1 · contrato -->
   <div class="card">
     <h2>1 · Contrato</h2>
@@ -186,16 +191,16 @@
   <div class="card">
     <h2>2 · Período</h2>
     <div class="row">
-      <label>Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
+      <label id="lblStartMonth">Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
     </div>
-    <div class="row" style="margin-top:10px">
+    <div class="row" id="deficitRow" style="margin-top:10px">
       <label>Horas em défice (até ao fim do mês anterior)
         <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/>
         <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span>
       </label>
     </div>
-    <p class="small">Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas. <span id="periodHint"></span></p>
+    <p class="small" id="periodModeHint">Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas. <span id="periodHint"></span></p>
   </div>
 
   <!-- 3 · DL 119/2026 -->
@@ -898,7 +903,7 @@ function daysInMonth(y,m){return new Date(y,m,0).getDate();}
 /* =========================================================================
    PARTE E — UI: estado + seletores
    ========================================================================= */
-let UI = { manualRows:[], lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false };
+let UI = { manualRows:[], lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false, periodMode:'mensal' };
 
 // Horário base (40/42) menos redução legal (0–7) = horário semanal efetivo.
 function weeklyBase(){return parseInt(document.getElementById('selWeeklyBase').value,10);}
@@ -951,13 +956,19 @@ function extraHours(){return parseFloat(document.getElementById('selExtraH').val
 function bolsaHours(){return parseFloat(document.getElementById('selBolsaH').value)||0;}
 // Défice de horas já existente ANTES do período em análise (soma-se ao
 // contrato da 1ª semana processada; ver PARTE C).
-function initialDeficitHours(){const e=document.getElementById('inpInitialDeficit');const v=e?parseFloat(e.value):0;return v>0?v:0;}
+function initialDeficitHours(){
+  if(UI.periodMode==='anual') return 0;   // ano inteiro inserido -> nao ha defice "previo" a somar
+  const e=document.getElementById('inpInitialDeficit');const v=e?parseFloat(e.value):0;return v>0?v:0;
+}
 /* Período = "número de meses" SEGUIDOS a contar do "mês inicial". Tem de ser
    sempre contíguo — é isso que dá sentido aos valores "prévios" (défice
    inicial no ponto 2 / horas Extra do DL119 no ponto 3): aplicam-se sempre
    ao estado no ÚLTIMO DIA DO MÊS ANTERIOR ao mês inicial, o que só é uma âncora coerente
    quando não há saltos entre os meses escolhidos. */
-function numMeses(){const e=document.getElementById('selNumMeses');const v=e?parseInt(e.value,10):1;return v>0?v:1;}
+function numMeses(){
+  if(UI.periodMode==='anual') return 12;
+  const e=document.getElementById('selNumMeses');const v=e?parseInt(e.value,10):1;return v>0?v:1;
+}
 function isSingleMonth(){return numMeses()===1;}
 function startMonth(){
   const sm=document.getElementById('selStartMonth'), sy=document.getElementById('selStartYear');
@@ -1028,8 +1039,12 @@ function updatePeriodAvailability(){
   const anchor=priorAnchorLabel();
   const l1=document.getElementById('priorMonthLabel1'); if(l1) l1.textContent=anchor;
   const l2=document.getElementById('priorMonthLabel2'); if(l2) l2.textContent=anchor;
-  const el=document.getElementById('periodHint'); if(!el) return;
-  el.textContent = '';
+  const hint=document.getElementById('periodModeHint');
+  if(hint){
+    hint.innerHTML = UI.periodMode==='anual'
+      ? 'Período de <b>1 ano</b> (Janeiro–Dezembro) + dias das semanas de fronteira nas duas pontas.'
+      : 'Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas.';
+  }
 }
 function updateWeeklyHint(){
   const base=weeklyBase(), red=weeklyReduction(), eff=currentWeekly();
@@ -1060,6 +1075,24 @@ function switchOutputTab(mode){
   document.getElementById('paneOutMensal').classList.toggle('active',mode==='mensal');
   document.getElementById('paneOutAnual').classList.toggle('active',mode==='anual');
 }
+
+// Modo do período (topo da página): Mensal (1 mês, como sempre) ou Anual
+// (ano civil inteiro, Janeiro–Dezembro, tudo introduzido diretamente no
+// calendário — sem défice/horas Extra "prévias", que só fazem sentido para
+// cobrir um ano parcial). Ponto 1 (Contrato) é sempre igual nos dois modos.
+function switchPeriodMode(mode){
+  UI.periodMode = mode;
+  document.getElementById('tabPeriodMensal').classList.toggle('active', mode==='mensal');
+  document.getElementById('tabPeriodAnual').classList.toggle('active', mode==='anual');
+  const isAnual = mode==='anual';
+  const lblMonth=document.getElementById('lblStartMonth'); if(lblMonth) lblMonth.style.display = isAnual?'none':'';
+  const deficitRow=document.getElementById('deficitRow'); if(deficitRow) deficitRow.style.display = isAnual?'none':'';
+  if(isAnual){
+    const sm=document.getElementById('selStartMonth'); if(sm) sm.value='1';   // sempre Janeiro-Dezembro
+  }
+  updatePeriodAvailability();
+  buildCalendar();
+}
 /* ---- MANUAL ---- */
 /* Constrói as linhas manuais a partir de selectedMonths() — sempre N meses
    SEGUIDOS a contar do mês inicial (ver PARTE E). Para CADA mês, alarga aos
@@ -1083,9 +1116,12 @@ function buildCalendar(){
       const inThis=(date>=firstISO && date<=lastISO);
       let row=UI.rowByDate[date];
       if(!row){
-        // pré-preenche: dias úteis com Rotina; feriados com Folga (8h fixas)
+        // pré-preenche: dias úteis com Rotina; feriados com Folga (8h fixas).
+        // Modo Anual: pré-preenche TUDO com Rotina (sem distinguir fim de
+        // semana/feriado) — ano inteiro fica mais rápido de ajustar a partir
+        // de uma base uniforme do que célula a célula.
         const kind=dayKind(date);
-        const work = kind==='weekday' ? 'rotina' : (kind==='holiday' ? 'folga' : '');
+        const work = (UI.periodMode==='anual') ? 'rotina' : (kind==='weekday' ? 'rotina' : (kind==='holiday' ? 'folga' : ''));
         row={date, inMonth:inThis, work, banco:''};
         UI.manualRows.push(row); UI.rowByDate[date]=row;
       } else if(inThis){
@@ -1246,7 +1282,10 @@ function isDL119Enabled(){ const e=document.getElementById('chkDL119'); return !
 // Horas Extra já realizadas fora do período aqui inserido (ver ponto 3) — soma-se
 // ao total do período para o limite anual do DL119 (250h/150h) ser avaliado
 // corretamente mesmo quando nem todos os meses do ano estão na ferramenta.
-function dl119PriorHours(){ const e=document.getElementById('inpDL119PriorHours'); const v=e?parseFloat(e.value):0; return v>0?v:0; }
+function dl119PriorHours(){
+  if(UI.periodMode==='anual') return 0;   // ano inteiro inserido -> nao ha horas Extra "previas" a somar
+  const e=document.getElementById('inpDL119PriorHours'); const v=e?parseFloat(e.value):0; return v>0?v:0;
+}
 
 function calculate(){
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
@@ -1258,13 +1297,16 @@ function calculate(){
 
   // DL119 é calculado ANTES do Output 1, para que as suas linhas/valores já
   // entrem na tabela de resumo (renderSummary) em vez de ficarem num card à parte.
+  const isAnual = UI.periodMode==='anual';
   const weekendRow=document.getElementById('dl119WeekendConfirmRow');
   const lastBlockRow=document.getElementById('dl119LastBlockRow');
   const priorHoursRow=document.getElementById('dl119PriorHoursRow');
   let dl119=null, windows=[], priorH=0, erHoursYear=0;
   if(isDL119Enabled()){
     if(lastBlockRow) lastBlockRow.style.display='';
-    if(priorHoursRow) priorHoursRow.style.display='';
+    // Modo Anual: o ano inteiro já está no calendário, não há "horas Extra
+    // prévias" a indicar (ver dl119PriorHours()).
+    if(priorHoursRow) priorHoursRow.style.display = isAnual ? 'none' : '';
     // Total anual = horas ER do(s) mês(es) aqui inseridos + horas já feitas
     // antes (input manual, ponto 3) — precisa e não depende de o período
     // cobrir o ano inteiro.
@@ -1272,8 +1314,9 @@ function calculate(){
     const limit=dl119AnnualLimit(ctx.regime);
     // Só faz sentido perguntar pela condição de fim de semana (Art.5º) quando
     // as horas E já realizadas antes deste mês já ultrapassam o limite anual
-    // do regime — só nesse caso a majoração pode estar em jogo.
-    const showWeekendToggle = priorH>limit;
+    // do regime — só nesse caso a majoração pode estar em jogo. Em modo
+    // Anual não há "prévias" (priorH é sempre 0), por isso mostra-se sempre.
+    const showWeekendToggle = isAnual || priorH>limit;
     if(weekendRow) weekendRow.style.display = showWeekendToggle ? '' : 'none';
     if(!showWeekendToggle && UI.dl119WeekendConfirmed){
       UI.dl119WeekendConfirmed=false;
@@ -1296,7 +1339,9 @@ function calculate(){
 
   renderValidation(result.warnings);
   renderSummary(result.summary,result,dl119);
-  renderShifts(result.shifts.filter(s=>s.isER));
+  // Output 2 (detalhe por turno) não faz sentido para um ano inteiro -> escondido em modo Anual.
+  if(isAnual){ document.getElementById('shiftsCard').style.display='none'; }
+  else { renderShifts(result.shifts.filter(s=>s.isER)); }
   renderAnnual(result);
   renderDL119Extras(dl119, windows, priorH, erHoursYear);
   // Atualiza a coluna "Semana" do calendário (ponto 4) com os totais agora calculados.
