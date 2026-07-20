@@ -163,6 +163,7 @@
   <div class="tabs">
     <button id="tabPeriodMensal" class="active" onclick="switchPeriodMode('mensal')">📅 Mensal</button>
     <button id="tabPeriodAnual" onclick="switchPeriodMode('anual')">📆 Anual</button>
+    <button id="tabPeriodVariavel" onclick="switchPeriodMode('variavel')">🗓️ Variável</button>
   </div>
 
   <!-- 1 · contrato -->
@@ -192,6 +193,7 @@
     <h2>2 · Período</h2>
     <div class="row">
       <label id="lblStartMonth">Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
+      <label id="lblEndMonth" style="display:none">Mês final <select id="selEndMonth" onchange="onStartMonthChange()"></select></label>
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
     </div>
     <div class="row" id="deficitRow" style="margin-top:10px">
@@ -967,6 +969,11 @@ function initialDeficitHours(){
    quando não há saltos entre os meses escolhidos. */
 function numMeses(){
   if(UI.periodMode==='anual') return 12;
+  if(UI.periodMode==='variavel'){
+    const sm=parseInt(document.getElementById('selStartMonth').value,10)||1;
+    const em=parseInt(document.getElementById('selEndMonth').value,10)||sm;
+    return Math.max(1, em-sm+1);
+  }
   const e=document.getElementById('selNumMeses');const v=e?parseInt(e.value,10):1;return v>0?v:1;
 }
 function isSingleMonth(){return numMeses()===1;}
@@ -1010,8 +1017,11 @@ const MONTHS_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','
 function initSelectors(){
   const sm=document.getElementById('selStartMonth');
   sm.innerHTML=MONTHS_PT.map((mn,i)=>`<option value="${i+1}">${mn}</option>`).join('');
+  const em=document.getElementById('selEndMonth');
+  em.innerHTML=MONTHS_PT.map((mn,i)=>`<option value="${i+1}">${mn}</option>`).join('');
   const now=new Date();
   sm.value=now.getMonth()+1;
+  em.value=now.getMonth()+1;
   document.getElementById('selStartYear').value=now.getFullYear();
   const sb=document.getElementById('selWeeklyBase');
   sb.innerHTML=[40,42].map(h=>`<option value="${h}" ${h===40?'selected':''}>${h} h/semana</option>`).join('');
@@ -1031,7 +1041,14 @@ function initSelectors(){
     document.getElementById(id).addEventListener('change',renderManualCalendar));
   updateWeeklyHint(); updatePeriodAvailability();
 }
-function onStartMonthChange(){ updatePeriodAvailability(); buildCalendar(); }
+function onStartMonthChange(){
+  // Variável: Mês final nunca pode ficar antes do Mês inicial (mesmo ano).
+  if(UI.periodMode==='variavel'){
+    const sm=document.getElementById('selStartMonth'), em=document.getElementById('selEndMonth');
+    if(sm && em && parseInt(em.value,10)<parseInt(sm.value,10)) em.value=sm.value;
+  }
+  updatePeriodAvailability(); buildCalendar();
+}
 function onNumMesesChange(){ updatePeriodAvailability(); buildCalendar(); }
 
 // Atualiza a etiqueta do "mês âncora" (pontos 2 e 3) e o hint do período.
@@ -1043,6 +1060,8 @@ function updatePeriodAvailability(){
   if(hint){
     hint.innerHTML = UI.periodMode==='anual'
       ? 'Período de <b>1 ano</b> (Janeiro–Dezembro) + dias das semanas de fronteira nas duas pontas.'
+      : UI.periodMode==='variavel'
+      ? `Período de <b>${numMeses()} ${numMeses()===1?'mês':'meses'}</b> (mesmo ano) + dias das semanas de fronteira nas duas pontas.`
       : 'Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas.';
   }
 }
@@ -1076,19 +1095,29 @@ function switchOutputTab(mode){
   document.getElementById('paneOutAnual').classList.toggle('active',mode==='anual');
 }
 
-// Modo do período (topo da página): Mensal (1 mês, como sempre) ou Anual
-// (ano civil inteiro, Janeiro–Dezembro, tudo introduzido diretamente no
+// Modo do período (topo da página): Mensal (1 mês, como sempre), Anual (ano
+// civil inteiro, Janeiro–Dezembro, tudo introduzido diretamente no
 // calendário — sem défice/horas Extra "prévias", que só fazem sentido para
-// cobrir um ano parcial). Ponto 1 (Contrato) é sempre igual nos dois modos.
+// cobrir um ano parcial) ou Variável (Mês inicial + Mês final, mesmo ano —
+// igual ao Mensal em tudo, só que o período pode ter vários meses).
+// Ponto 1 (Contrato) é sempre igual nos três modos.
 function switchPeriodMode(mode){
   UI.periodMode = mode;
   document.getElementById('tabPeriodMensal').classList.toggle('active', mode==='mensal');
   document.getElementById('tabPeriodAnual').classList.toggle('active', mode==='anual');
+  document.getElementById('tabPeriodVariavel').classList.toggle('active', mode==='variavel');
   const isAnual = mode==='anual';
+  const isVariavel = mode==='variavel';
   const lblMonth=document.getElementById('lblStartMonth'); if(lblMonth) lblMonth.style.display = isAnual?'none':'';
+  const lblEndMonth=document.getElementById('lblEndMonth'); if(lblEndMonth) lblEndMonth.style.display = isVariavel?'':'none';
   const deficitRow=document.getElementById('deficitRow'); if(deficitRow) deficitRow.style.display = isAnual?'none':'';
   if(isAnual){
     const sm=document.getElementById('selStartMonth'); if(sm) sm.value='1';   // sempre Janeiro-Dezembro
+  }
+  if(isVariavel){
+    // garante Mês final >= Mês inicial (mesmo ano) ao entrar no modo
+    const sm=document.getElementById('selStartMonth'), em=document.getElementById('selEndMonth');
+    if(sm && em && parseInt(em.value,10)<parseInt(sm.value,10)) em.value=sm.value;
   }
   updatePeriodAvailability();
   buildCalendar();
@@ -1116,12 +1145,13 @@ function buildCalendar(){
       const inThis=(date>=firstISO && date<=lastISO);
       let row=UI.rowByDate[date];
       if(!row){
-        // pré-preenche: dias úteis com Rotina; feriados com Folga (8h fixas).
-        // Modo Anual: pré-preenche TUDO com Rotina (sem distinguir fim de
-        // semana/feriado) — ano inteiro fica mais rápido de ajustar a partir
-        // de uma base uniforme do que célula a célula.
-        const kind=dayKind(date);
-        const work = (UI.periodMode==='anual') ? 'rotina' : (kind==='weekday' ? 'rotina' : (kind==='holiday' ? 'folga' : ''));
+        // pré-preenche (igual nos 3 modos): dia útil sem feriado -> Rotina;
+        // feriado NUM DIA ÚTIL -> Folga; qualquer fim de semana (sábado ou
+        // domingo, MESMO que seja feriado) -> nada (já é dia de descanso por
+        // ser fim de semana, marcar Folga aí seria redundante).
+        const dow=parseISO(date).getDay();
+        const isWeekendDay=(dow===0||dow===6);
+        const work = isWeekendDay ? '' : (dayKind(date)==='holiday' ? 'folga' : 'rotina');
         row={date, inMonth:inThis, work, banco:''};
         UI.manualRows.push(row); UI.rowByDate[date]=row;
       } else if(inThis){
@@ -1266,12 +1296,20 @@ function collectEntries(){
     .map(r=>{
       // Urgência D (08:00–20:00) ou 24h sobrepõe-se ao horário diurno normal
       // -> ignora o trabalho normal desse dia (evita duplicar horas).
-      const ignoresWork = (r.banco==='dia'||r.banco==='h24');
-      const regularHours=ignoresWork?0:workHoursOf(r.work);
+      const ignoresFromBanco = (r.banco==='dia'||r.banco==='h24');
+      // Rotina/Tarde/Bolsa de Horas não se aplicam a fins de semana (sábado
+      // OU domingo, mesmo que seja feriado) -- ignorados silenciosamente,
+      // tal como a Urgência D acima. Folga continua válida (dia de descanso
+      // explícito). Alternativo fica sem regra por agora (a decidir depois).
+      const dow=parseISO(r.date).getDay();
+      const isWeekendDay=(dow===0||dow===6);
+      const ignoresFromWeekend = isWeekendDay && (r.work==='rotina'||r.work==='tarde'||r.work==='bolsa');
+      const effectiveWork = (ignoresFromBanco||ignoresFromWeekend) ? '' : (r.work||'');
+      const regularHours = effectiveWork ? workHoursOf(effectiveWork) : 0;
       const b=BANCO_TYPES[r.banco];
       return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
               er:!!b, start:b?b.start:'', end:b?b.end:'', prevention:false,
-              workType:ignoresWork?'':(r.work||''), bancoType:r.banco||''};
+              workType:effectiveWork, bancoType:r.banco||''};
     });
 }
 
@@ -1339,8 +1377,8 @@ function calculate(){
 
   renderValidation(result.warnings);
   renderSummary(result.summary,result,dl119);
-  // Output 2 (detalhe por turno) não faz sentido para um ano inteiro -> escondido em modo Anual.
-  if(isAnual){ document.getElementById('shiftsCard').style.display='none'; }
+  // Output 2 (detalhe por turno) só faz sentido para 1 mês -> escondido em Anual/Variável.
+  if(UI.periodMode!=='mensal'){ document.getElementById('shiftsCard').style.display='none'; }
   else { renderShifts(result.shifts.filter(s=>s.isER)); }
   renderAnnual(result);
   renderDL119Extras(dl119, windows, priorH, erHoursYear);
