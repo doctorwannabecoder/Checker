@@ -944,6 +944,107 @@ function daysInMonth(y,m){return new Date(y,m,0).getDate();}
    ========================================================================= */
 let UI = { manualRows:[], lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false, periodMode:'mensal' };
 
+/* =========================================================================
+   PARTE E-bis — PERSISTÊNCIA (localStorage)
+   -------------------------------------------------------------------------
+   Guarda automaticamente o estado (ponto 1-3 + calendário do ponto 4) a
+   cada alteração, para não perder um ano inteiro de dados por causa de um
+   refresh/crash acidental. Ao arrancar, se houver uma sessão guardada,
+   pergunta ao utilizador (banner) antes de restaurar — nunca restaura
+   silenciosamente por cima do que já esteja no ecrã.
+   `SAVE_ENABLED` fica false enquanto o banner de restauro está pendente,
+   para não sobrescrever os dados guardados com o estado "em branco" que o
+   arranque normal gera antes do utilizador decidir.
+   ========================================================================= */
+const CHECKER_STORAGE_KEY='erTnChecker_state_v1';
+let SAVE_ENABLED=true, PENDING_RESTORE=null;
+
+function collectState(){
+  const val=id=>{const e=document.getElementById(id); return e?e.value:'';};
+  const chk=id=>{const e=document.getElementById(id); return !!(e&&e.checked);};
+  const rows={};
+  (UI.manualRows||[]).forEach(r=>{ rows[r.date]={work:r.work||'', banco:r.banco||''}; });
+  return {
+    v:1, savedAt:new Date().toISOString(), periodMode:UI.periodMode,
+    selCategory:val('selCategory'), selRegime:val('selRegime'),
+    selWeeklyBase:val('selWeeklyBase'), selWeeklyRed:val('selWeeklyRed'),
+    selRotinaH:val('selRotinaH'), selTardeH:val('selTardeH'), selExtraH:val('selExtraH'), selBolsaH:val('selBolsaH'),
+    selStartMonth:val('selStartMonth'), selEndMonth:val('selEndMonth'), selStartYear:val('selStartYear'),
+    inpInitialDeficit:val('inpInitialDeficit'),
+    chkDL119:chk('chkDL119'), inpDL119PriorHours:val('inpDL119PriorHours'),
+    chkDL119LastBlock:chk('chkDL119LastBlock'), chkDL119WeekendConfirm:chk('chkDL119WeekendConfirm'),
+    dl119MajBlocks:Array.from(UI.dl119MajBlocks||[]), dl119WeekendConfirmed:!!UI.dl119WeekendConfirmed,
+    rows
+  };
+}
+function saveState(){
+  if(!SAVE_ENABLED) return;
+  try{
+    if(typeof localStorage==='undefined') return;
+    localStorage.setItem(CHECKER_STORAGE_KEY, JSON.stringify(collectState()));
+  }catch(e){ /* privado/sem quota -> ignora silenciosamente */ }
+}
+function loadSavedState(){
+  try{
+    if(typeof localStorage==='undefined') return null;
+    const raw=localStorage.getItem(CHECKER_STORAGE_KEY);
+    return raw?JSON.parse(raw):null;
+  }catch(e){ return null; }
+}
+function clearSavedState(){
+  try{ if(typeof localStorage!=='undefined') localStorage.removeItem(CHECKER_STORAGE_KEY); }catch(e){}
+}
+function applyState(saved){
+  if(!saved) return;
+  const setVal=(id,v)=>{ const e=document.getElementById(id); if(e && v!=null && v!=='') e.value=v; };
+  const setChk=(id,v)=>{ const e=document.getElementById(id); if(e) e.checked=!!v; };
+  setVal('selWeeklyBase', saved.selWeeklyBase); setVal('selWeeklyRed', saved.selWeeklyRed);
+  setVal('selCategory', saved.selCategory);
+  fillRegimeOptions();               // reconstrói as opções de regime consoante a categoria restaurada
+  setVal('selRegime', saved.selRegime);
+  setVal('selRotinaH', saved.selRotinaH); setVal('selTardeH', saved.selTardeH);
+  setVal('selExtraH', saved.selExtraH); setVal('selBolsaH', saved.selBolsaH);
+  setVal('selStartYear', saved.selStartYear);
+  setVal('selStartMonth', saved.selStartMonth); setVal('selEndMonth', saved.selEndMonth);
+  setVal('inpInitialDeficit', saved.inpInitialDeficit);
+  setChk('chkDL119', saved.chkDL119);
+  setVal('inpDL119PriorHours', saved.inpDL119PriorHours);
+  setChk('chkDL119LastBlock', saved.chkDL119LastBlock);
+  setChk('chkDL119WeekendConfirm', saved.chkDL119WeekendConfirm);
+  UI.dl119MajBlocks=new Set(saved.dl119MajBlocks||[]);
+  UI.dl119WeekendConfirmed=!!saved.dl119WeekendConfirmed;
+  updateWeeklyHint();
+  switchPeriodMode(saved.periodMode||'mensal');   // reconstrói UI.manualRows/rowByDate com o prefill por defeito
+  // sobrepõe os valores REAIS guardados por dia aos defaults recém-gerados
+  const rows=saved.rows||{};
+  Object.keys(rows).forEach(date=>{
+    const row=UI.rowByDate[date];
+    if(row){ row.work=rows[date].work||''; row.banco=rows[date].banco||''; }
+  });
+  renderManualCalendar();
+  calculate();
+}
+function showRestoreBanner(saved){
+  PENDING_RESTORE=saved;
+  const bar=document.createElement('div');
+  bar.id='restoreBanner';
+  bar.style.cssText='position:sticky;top:0;z-index:50;background:#132030;border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+  const when=saved.savedAt?new Date(saved.savedAt).toLocaleString('pt-PT'):'—';
+  bar.innerHTML=`<span class="small">💾 Encontrada uma sessão guardada automaticamente (${when}).</span>
+    <button type="button" class="btn" style="padding:6px 14px" onclick="restoreSavedState()">Restaurar</button>
+    <button type="button" class="btn" style="padding:6px 14px;background:transparent;border:1px solid var(--line)" onclick="discardSavedState()">Descartar</button>`;
+  document.body.prepend(bar);
+}
+function restoreSavedState(){
+  applyState(PENDING_RESTORE);
+  PENDING_RESTORE=null; SAVE_ENABLED=true; saveState();
+  const bar=document.getElementById('restoreBanner'); if(bar) bar.remove();
+}
+function discardSavedState(){
+  clearSavedState(); PENDING_RESTORE=null; SAVE_ENABLED=true;
+  const bar=document.getElementById('restoreBanner'); if(bar) bar.remove();
+}
+
 // Horário base (40/42) menos redução legal (0–7) = horário semanal efetivo.
 function weeklyBase(){return parseInt(document.getElementById('selWeeklyBase').value,10);}
 function weeklyReduction(){return parseInt(document.getElementById('selWeeklyRed').value,10)||0;}
@@ -1135,6 +1236,7 @@ function updateWeeklyHint(){
     const extraNote = (he!==hb) ? ` · €/hora ER/TN ${eur(he)} (Internato Anos 4-6 = 80% Assistente Geral)` : ' (base dos multiplicadores ER)';
     sh.textContent=`Base ${eur(currentMonthlyBase())}/mês · €/hora ${eur(hb)}${extraNote}`;
   }
+  saveState();
 }
 
 function renderConfirmBanner(){
@@ -1343,6 +1445,7 @@ function renderManualCalendar(){
     }
     renderManualCalendar();
   }));
+  saveState();
 }
 
 /* Normaliza UI.manualRows para a forma que o motor consome:
@@ -1683,7 +1786,10 @@ function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício
 function copyShifts(){copyToClipboard(shiftsToText(),'Detalhe copiado!');}
 
 /* ---- arranque ---- */
+const _savedState=loadSavedState();
+if(_savedState) SAVE_ENABLED=false;   // nao guardar por cima do estado guardado enquanto o banner esta pendente
 initSelectors(); renderConfirmBanner(); buildCalendar();
+if(_savedState) showRestoreBanner(_savedState); else SAVE_ENABLED=true;
 </script>
 </body>
 </html>
