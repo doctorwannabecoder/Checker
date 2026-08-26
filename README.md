@@ -109,8 +109,15 @@ daqui, nada está hard-coded noutro sítio:
 | `CODE_MATRIX` / `TN_MATRIX` | que categoria se aplica a cada caso (dia útil/Sáb/Dom/feriado × diurno/noturno × 1ª/seguintes) |
 | `SHIFT_CODE_MAP` | significado dos códigos da escala-base (`worked` e, para turnos, `start`/`end`) |
 
-As regras de pagamento estão **confirmadas** contra a tabela SIM. Uma entrada com
-`confirm:true` passa a mostrar um badge amarelo na UI — use isso ao introduzir
+As regras de pagamento estão **confirmadas** contra a tabela SIM, com uma exceção
+assinalada na UI com badge amarelo: a **Prevenção**. Não o fator (metade do turno),
+mas a atribuição por dia — a janela 20:00–08:00 atravessa sempre dois dias e cada
+hora é paga pelo multiplicador do dia REAL em que cai, como a SIM faz para os
+turnos trabalhados. Consequência: prevenção ao Sábado ≈ ×1,24 (4h Sáb + 8h Dom) e
+ao Domingo ≈ ×1,07 (4h Dom + 8h Seg, já a dia útil). A leitura alternativa seria
+pagar as 12h ao dia em que começa. **Por confirmar com o acordo coletivo.**
+
+Qualquer entrada com `confirm:true` mostra o badge amarelo — use isso ao introduzir
 qualquer regra ainda por validar.
 
 ## Testes

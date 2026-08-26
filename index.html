@@ -389,7 +389,17 @@ const PAYROLL_RULES = {
     TN_FER: {code:'TN · Fer', desc:'TN · feriado · noturno',  isER:false, isTN:true, confirm:false},
     // --- Outros ---
     RW:   {code:'Base', desc:'Remuneração base (trabalho regular contratado)', isER:false, isTN:false, confirm:false},
-    PREV: {code:'Prev', desc:'Prevenção', isER:false, isTN:false, confirm:false}
+    /* POR CONFIRMAR — não o fator (0,5, dado como certo), mas a ATRIBUIÇÃO POR
+       DIA das horas depois da meia-noite. A janela 20:00–08:00 atravessa sempre
+       dois dias, e cada hora é paga pelo multiplicador do dia REAL em que cai,
+       como a tabela SIM faz para os turnos trabalhados (é por isso que o Sábado
+       parte às 13:00 em vez de o dia inteiro levar uma taxa única). Consequência:
+         · Prevenção ao Sábado → 4h Sáb + 8h Dom  → coef. efetivo ≈ ×1,24
+         · Prevenção ao Domingo → 4h Dom + 8h Seg → coef. efetivo ≈ ×1,07
+       A leitura alternativa seria pagar as 12h ao dia em que a prevenção COMEÇA
+       (×1,24 nos dois casos). Se o acordo coletivo disser isso, basta classificar
+       a janela toda com a data de início em vez do dia real. */
+    PREV: {code:'Prev', desc:'Prevenção', isER:false, isTN:false, confirm:true}
   }
 };
 
@@ -1350,7 +1360,9 @@ function updateWeeklyHint(){
 
 function renderConfirmBanner(){
   const conf=[];
-  Object.values(PAYROLL_RULES.codes).forEach(c=>{ if(c.confirm)conf.push(c.code); });
+  Object.values(PAYROLL_RULES.codes).forEach(c=>{ if(c.confirm && c.code!=='Prev')conf.push(c.code); });
+  if(PAYROLL_RULES.codes.PREV && PAYROLL_RULES.codes.PREV.confirm)
+    conf.push('Prevenção — horas depois da meia-noite pagas pelo dia real (Dom→Seg desce a dia útil)');
   if(PAYROLL_RULES.nightWindow.confirm) conf.unshift(`janela noturna ${PAYROLL_RULES.nightWindow.startHour}:00–0${PAYROLL_RULES.nightWindow.endHour}:00`);
   if(PAYROLL_RULES.saturdaySplitHour.confirm) conf.push(`Sábado>13h=DDC`);
   const el=document.getElementById('confirmBanner'); let html='';

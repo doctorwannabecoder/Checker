@@ -103,5 +103,20 @@ e=collectEntries().find(x=>x.date==='2026-05-04');
 assertEqual(!e || e.prevention===false, true, 'P num dia util e ignorada');
 mon.prev=false;
 
+/* --- A atribuicao por dia das horas depois da meia-noite esta POR CONFIRMAR:
+   Sabado -> 4h Sab + 8h Dom (~x1.24) · Domingo -> 4h Dom + 8h Seg (~x1.07) --- */
+assertEqual(PAYROLL_RULES.codes.PREV.confirm, true, 'PREV marcada como por confirmar');
+renderConfirmBanner();
+assertEqual(document.getElementById('confirmBanner').innerHTML.includes('Prevenção'), true,
+  'o banner de confirmacao menciona a Prevencao');
+
+// Domingo: as 8h depois da meia-noite caem em Segunda (dia util, x2 em vez de x2.5)
+const resDom=computeMonth([{date:'2026-05-03', inMonth:true, regularHours:0, er:false,
+                            prevention:true, start:'', end:'', workType:'', bancoType:''}], ectx);
+const rowDom=resDom.summary.find(r=>r.key==='PREV');
+assertClose(rowDom.eur, R*(2.25 + 3*2.5 + 8*2.0)*0.5, 0.01,
+  'Domingo: 4h ao fim de semana + 8h a taxa de dia util');
+assertEqual(rowDom.eur < prevRow.eur, true, 'Prevencao ao Domingo vale menos que ao Sabado');
+
 console.log('OK: Prevencao (P) -- fim de semana, janela propria, metade do turno, coexiste com D — '+CHECKS_RUN+' assercoes.');
 `);
