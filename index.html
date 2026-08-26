@@ -238,7 +238,7 @@
     <h2>4 · Entrada</h2>
     <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> — nos dias úteis R Rotina · T Tarde · F Folga · BH Bolsa de Horas,
       ao fim de semana apenas A Alternativo — e <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h; ao fim de semana
-      também P Prevenção 20:00–08:00, exclusiva de D/N). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
+      também P Prevenção 20:00–08:00, que acumula com D mas não com N/24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
       dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de
       <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
     <div id="manualCal" style="overflow-x:auto"></div>
@@ -348,6 +348,9 @@ const PAYROLL_RULES = {
   // Prevenção: paga a METADE do valor/hora do próprio turno (mesmos
   // multiplicadores SIM do turno que cobriria essas horas, × 0,5).
   preventionFactor: { pct: 0.5, confirm:false },
+  // Janela da Prevenção. É própria — independente do turno de banco do mesmo
+  // dia — para que Banco Dia + Prevenção possam coexistir.
+  preventionWindow: { start:'20:00', end:'08:00', confirm:false },
 
   /* CATEGORIAS DE PAGAMENTO — key -> {code, desc, isER, isTN, confirm}
      `code` = etiqueta curta (mostrada na coluna "Categoria"); `desc` = descrição completa. */
@@ -644,9 +647,9 @@ function computeEntry(entry, ctx, contractRem){
   if(startMin!=null && endMin!=null) durMin=shiftDurationMin(startMin,endMin);
   else if(typeof entry.hours==='number' && entry.hours>0) durMin=entry.hours*60;
 
-  if(entry.er || entry.prevention){
+  if(entry.er){
     if(startMin==null && endMin==null && !(durMin>0))
-      warnings.push({type:'err',msg:`${date}: ${entry.er?'ER':'Prevenção'} marcado mas sem horas (início/fim ou horas).`});
+      warnings.push({type:'err',msg:`${date}: ER marcado mas sem horas (início/fim ou horas).`});
     else if((startMin==null)!==(endMin==null))
       warnings.push({type:'err',msg:`${date}: falta a hora de ${startMin==null?'início':'fim'}.`});
   }
@@ -697,29 +700,39 @@ function computeEntry(entry, ctx, contractRem){
     Object.values(cls.contractDayMin).forEach(mins=>{ contractDayH+=mins/60; });
   } else if(entry.er && durMin>0){
     warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir contrato/extraordinário e diurno/noturno.`});
-  } else if(entry.prevention && durMin>0 && startMin!=null){
-    // Prevenção paga a metade do valor/hora do turno que cobriria estas horas:
-    // reutiliza a classificação por minuto (categoria × diurno/noturno × 1ª/seg)
-    // e aplica-lhe PAYROLL_RULES.preventionFactor. Não consome contrato nem
-    // gera TN — não é trabalho efetivo, é disponibilidade.
-    const pf=PAYROLL_RULES.preventionFactor.pct;
-    const clsPrev=classifyErShift(date,startMin,durMin,0);
-    let prevEur=0;
-    Object.entries(clsPrev.erMin).forEach(([k,mins])=>{
-      const [cat,seg,order]=k.split('|');
-      const mult=(ER_MULTIPLIER[cat] && ER_MULTIPLIER[cat][seg])?ER_MULTIPLIER[cat][seg][order]:0;
-      prevEur += (mins/60)*hourly*mult*pf;
-    });
-    addAlloc(allocMap,'PREV', totalH, prevEur, {mult:pf});
-  } else if(entry.prevention && durMin>0){
-    addAlloc(allocMap,'PREV', totalH, 0, {});
+  }
+
+  // 3) Prevenção — INDEPENDENTE do turno de banco (um dia pode ter Banco Dia
+  //    08:00–20:00 e Prevenção 20:00–08:00). Usa janela própria, por isso não
+  //    toca em entry.start/end nem em totalH: disponibilidade não é trabalho
+  //    efetivo, não consome contrato e não gera TN.
+  //    Paga a metade do turno que cobriria estas horas — reutiliza a mesma
+  //    classificação do ER (categoria × diurno/noturno × 1ª/seguintes) e
+  //    aplica-lhe PAYROLL_RULES.preventionFactor.
+  let prevH=0;
+  if(entry.prevention){
+    const pw=PAYROLL_RULES.preventionWindow;
+    const pStart=timeToMin(pw.start), pEnd=timeToMin(pw.end);
+    const pDur=(pStart!=null&&pEnd!=null)?shiftDurationMin(pStart,pEnd):0;
+    if(pDur>0){
+      const pf=PAYROLL_RULES.preventionFactor.pct;
+      const clsPrev=classifyErShift(date,pStart,pDur,0);
+      let prevEur=0;
+      Object.entries(clsPrev.erMin).forEach(([k,mins])=>{
+        const [cat,seg,order]=k.split('|');
+        const mult=(ER_MULTIPLIER[cat] && ER_MULTIPLIER[cat][seg])?ER_MULTIPLIER[cat][seg][order]:0;
+        prevEur += (mins/60)*hourly*mult*pf;
+      });
+      prevH=pDur/60;
+      addAlloc(allocMap,'PREV', prevH, prevEur, {mult:pf});
+    }
   }
 
   const allocations=Object.values(allocMap).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   return {
     date, kind, isFds, weekday:weekdayName(date), holiday:kind==='holiday'?holidayName(date):'',
     start:startMin!=null?minToHHMM(startMin):'', end:endMin!=null?minToHHMM(endMin):'',
-    isER:!!entry.er, isPrev:!!entry.prevention,
+    isER:!!entry.er, isPrev:!!entry.prevention, prevH:round2(prevH),
     totalH:round2(totalH), tnH:round2(tnH), erDayH:round2(erDayH), erNightH:round2(erNightH),
     contractDayH:round2(contractDayH),
     erEur:round2(erEur), tnEur:round2(tnEur), shiftEur:round2(erEur+tnEur),
@@ -1395,8 +1408,8 @@ function renderManualCalendar(){
   // vez de droplist — D+N ativos em simultâneo = Banco 24h.
   const bancoToggles=(date,sel,prev)=>{
     const isD=(sel==='dia'||sel==='h24'), isN=(sel==='noite'||sel==='h24');
-    // Prevenção só existe ao fim de semana; exclusiva de D/N (o motor indexa
-    // as entradas por data, por isso um dia só pode gerar uma entrada).
+    // Prevenção só existe ao fim de semana. Coexiste com Banco Dia (janelas
+    // distintas); colide com N/24h, que já ocupam a noite.
     const pBtn=isWeekendDate(date)
       ? `<button type="button" class="banco-btn banco-p${prev?' active':''}" data-t="p" title="Prevenção (20:00–08:00)">P</button>`
       : '';
@@ -1466,12 +1479,17 @@ function renderManualCalendar(){
   host.querySelectorAll('.banco-btn').forEach(btn=>btn.addEventListener('click',e=>{
     const wrap=btn.parentElement, date=wrap.dataset.d, type=btn.dataset.t;
     const row=UI.rowByDate[date]; if(!row) return;
-    if(type==='p'){ row.prev=!row.prev; if(row.prev) row.banco=''; renderManualCalendar(); return; }
+    if(type==='p'){
+      row.prev=!row.prev;
+      // P ocupa a noite: incompatível com N e com 24h, compatível com D.
+      if(row.prev){ if(row.banco==='noite') row.banco=''; else if(row.banco==='h24') row.banco='dia'; }
+      renderManualCalendar(); return;
+    }
     const isD=(row.banco==='dia'||row.banco==='h24'), isN=(row.banco==='noite'||row.banco==='h24');
     const newD = type==='d' ? !isD : isD, newN = type==='n' ? !isN : isN;
     const turnedOnNight = (type==='n' && newN && !isN);
     row.banco = newD&&newN ? 'h24' : newD ? 'dia' : newN ? 'noite' : '';
-    if(row.banco) row.prev=false;   // P é exclusiva de D/N
+    if(row.banco==='noite'||row.banco==='h24') row.prev=false;   // só a noite colide com P
     // Dedicação Plena: Urgência N implica descanso no dia seguinte -> muda
     // automaticamente para Bolsa de Horas (evita o aviso manual anterior).
     if(turnedOnNight && currentRegime()==='plena'){
@@ -1506,13 +1524,13 @@ function collectEntries(){
       const effectiveWork = (ignoresFromBanco||!allowedWork) ? '' : (r.work||'');
       const regularHours = effectiveWork ? workHoursOf(effectiveWork) : 0;
       const b=BANCO_TYPES[r.banco];
-      // Prevenção: só ao fim de semana e só quando não há turno de banco nesse
-      // dia. Ocupa a janela da noite (20:00–08:00).
-      const isPrev = !!r.prev && !b && isWeekendDate(r.date);
-      const pv = isPrev ? BANCO_TYPES.noite : null;
+      // Prevenção: só ao fim de semana. Coexiste com Banco Dia (janelas
+      // distintas); a UI impede N/24h + P, que se sobreporiam à noite. A
+      // janela vem de PAYROLL_RULES.preventionWindow, não de start/end.
+      const isPrev = !!r.prev && isWeekendDate(r.date);
       return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
               er:!!b, prevention:isPrev,
-              start:b?b.start:(pv?pv.start:''), end:b?b.end:(pv?pv.end:''),
+              start:b?b.start:'', end:b?b.end:'',
               workType:effectiveWork, bancoType:r.banco||''};
     });
 }
