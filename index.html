@@ -161,12 +161,6 @@
 <main>
   <div id="confirmBanner"></div>
 
-  <div class="tabs">
-    <button id="tabPeriodMensal" class="active" onclick="switchPeriodMode('mensal')">📅 Mensal</button>
-    <button id="tabPeriodAnual" onclick="switchPeriodMode('anual')">📆 Anual</button>
-    <button id="tabPeriodVariavel" onclick="switchPeriodMode('variavel')">🗓️ Variável</button>
-  </div>
-
   <!-- 1 · contrato -->
   <div class="card">
     <h2>1 · Contrato</h2>
@@ -194,10 +188,15 @@
     <h2>2 · Período</h2>
     <div class="row">
       <label id="lblStartMonth">Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
-      <label id="lblEndMonth" style="display:none">Mês final <select id="selEndMonth" onchange="onStartMonthChange()"></select></label>
+      <label>Nº de meses <select id="selNumMeses" onchange="onNumMesesChange()"></select></label>
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
     </div>
-    <div class="row" id="deficitRow" style="margin-top:10px">
+    <div class="row" id="deficitToggleRow" style="margin-top:10px">
+      <label class="inline"><input type="checkbox" id="chkDeficit" onchange="toggleDeficit()"/>
+        <span>Transitaram <b>horas em défice</b> do período anterior</span></label>
+      <span class="badge">opcional</span>
+    </div>
+    <div class="row" id="deficitRow" style="margin-top:10px;display:none">
       <label>Horas em défice (até ao fim do mês anterior)
         <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/>
         <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span>
@@ -308,8 +307,8 @@
   <div id="annualCard" class="card" style="display:none">
     <h2>Output 3 · Estimativa anual de rendimento</h2>
     <p class="small"><b>14×</b> vencimento base (12 meses + subsídios de férias e Natal) mais o extra ER+TN.
-      Se os 12 meses do ano estiverem inseridos (ponto 2), usa a soma real; com menos meses, extrapola
-      (×12/nº de meses), claramente assinalado como estimativa.</p>
+      Com o ano civil completo inserido (ponto 2) usa a soma real de ambos; com menos meses <b>anualiza</b>
+      a base (14× o vencimento mensal) e extrapola o extra (×12/nº de meses), assinalado como estimativa.</p>
     <div style="overflow-x:auto">
       <table id="annualTable">
         <thead><tr><th>Componente</th><th class="num">Cálculo</th><th class="num">Valor anual (€)</th></tr></thead>
@@ -974,7 +973,7 @@ function daysInMonth(y,m){return new Date(y,m,0).getDate();}
 /* =========================================================================
    PARTE E — UI: estado + seletores
    ========================================================================= */
-let UI = { manualRows:[], lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false, periodMode:'mensal' };
+let UI = { manualRows:[], lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false };
 
 /* =========================================================================
    PARTE E-bis — PERSISTÊNCIA (localStorage)
@@ -995,14 +994,14 @@ function collectState(){
   const val=id=>{const e=document.getElementById(id); return e?e.value:'';};
   const chk=id=>{const e=document.getElementById(id); return !!(e&&e.checked);};
   const rows={};
-  (UI.manualRows||[]).forEach(r=>{ rows[r.date]={work:r.work||'', banco:r.banco||''}; });
+  (UI.manualRows||[]).forEach(r=>{ rows[r.date]={work:r.work||'', banco:r.banco||'', prev:!!r.prev}; });
   return {
-    v:1, savedAt:new Date().toISOString(), periodMode:UI.periodMode,
+    v:2, savedAt:new Date().toISOString(),
     selCategory:val('selCategory'), selRegime:val('selRegime'),
     selWeeklyBase:val('selWeeklyBase'), selWeeklyRed:val('selWeeklyRed'),
     selRotinaH:val('selRotinaH'), selTardeH:val('selTardeH'), selExtraH:val('selExtraH'), selBolsaH:val('selBolsaH'),
-    selStartMonth:val('selStartMonth'), selEndMonth:val('selEndMonth'), selStartYear:val('selStartYear'),
-    inpInitialDeficit:val('inpInitialDeficit'),
+    selStartMonth:val('selStartMonth'), selNumMeses:val('selNumMeses'), selStartYear:val('selStartYear'),
+    chkDeficit:chk('chkDeficit'), inpInitialDeficit:val('inpInitialDeficit'),
     chkDL119:chk('chkDL119'), inpDL119PriorHours:val('inpDL119PriorHours'),
     chkDL119LastBlock:chk('chkDL119LastBlock'), chkDL119WeekendConfirm:chk('chkDL119WeekendConfirm'),
     dl119MajBlocks:Array.from(UI.dl119MajBlocks||[]), dl119WeekendConfirmed:!!UI.dl119WeekendConfirmed,
@@ -1037,7 +1036,10 @@ function applyState(saved){
   setVal('selRotinaH', saved.selRotinaH); setVal('selTardeH', saved.selTardeH);
   setVal('selExtraH', saved.selExtraH); setVal('selBolsaH', saved.selBolsaH);
   setVal('selStartYear', saved.selStartYear);
-  setVal('selStartMonth', saved.selStartMonth); setVal('selEndMonth', saved.selEndMonth);
+  setVal('selStartMonth', saved.selStartMonth);
+  fillNumMesesOptions();                       // o teto de meses depende do mês inicial
+  setVal('selNumMeses', saved.selNumMeses);
+  setChk('chkDeficit', saved.chkDeficit); toggleDeficit();
   setVal('inpInitialDeficit', saved.inpInitialDeficit);
   setChk('chkDL119', saved.chkDL119);
   setVal('inpDL119PriorHours', saved.inpDL119PriorHours);
@@ -1046,12 +1048,12 @@ function applyState(saved){
   UI.dl119MajBlocks=new Set(saved.dl119MajBlocks||[]);
   UI.dl119WeekendConfirmed=!!saved.dl119WeekendConfirmed;
   updateWeeklyHint();
-  switchPeriodMode(saved.periodMode||'mensal');   // reconstrói UI.manualRows/rowByDate com o prefill por defeito
+  updatePeriodAvailability(); buildCalendar();    // reconstrói UI.manualRows/rowByDate com o prefill por defeito
   // sobrepõe os valores REAIS guardados por dia aos defaults recém-gerados
   const rows=saved.rows||{};
   Object.keys(rows).forEach(date=>{
     const row=UI.rowByDate[date];
-    if(row){ row.work=rows[date].work||''; row.banco=rows[date].banco||''; }
+    if(row){ row.work=rows[date].work||''; row.banco=rows[date].banco||''; row.prev=!!rows[date].prev; }
   });
   renderManualCalendar();
   calculate();
@@ -1151,7 +1153,8 @@ function bolsaHours(){return parseFloat(document.getElementById('selBolsaH').val
 // Défice de horas já existente ANTES do período em análise (soma-se ao
 // contrato da 1ª semana processada; ver PARTE C).
 function initialDeficitHours(){
-  if(UI.periodMode==='anual') return 0;   // ano inteiro inserido -> nao ha defice "previo" a somar
+  if(isFullYear()) return 0;   // ano inteiro inserido -> nao ha defice "previo" a somar
+  const c=document.getElementById('chkDeficit'); if(c && !c.checked) return 0;
   const e=document.getElementById('inpInitialDeficit');const v=e?parseFloat(e.value):0;return v>0?v:0;
 }
 /* Período = "número de meses" SEGUIDOS a contar do "mês inicial". Tem de ser
@@ -1159,15 +1162,17 @@ function initialDeficitHours(){
    inicial no ponto 2 / horas Extra do DL119 no ponto 3): aplicam-se sempre
    ao estado no ÚLTIMO DIA DO MÊS ANTERIOR ao mês inicial, o que só é uma âncora coerente
    quando não há saltos entre os meses escolhidos. */
+/* Teto do nº de meses: o período NUNCA atravessa para Janeiro do ano seguinte
+   — começando em Agosto o máximo é 5 (Ago–Dez). Assim os subsídios de férias/
+   Natal e o limite anual do DL119 ficam sempre dentro do mesmo ano civil. */
+function maxNumMeses(){ return 13-startMonth().m; }
 function numMeses(){
-  if(UI.periodMode==='anual') return 12;
-  if(UI.periodMode==='variavel'){
-    const sm=parseInt(document.getElementById('selStartMonth').value,10)||1;
-    const em=parseInt(document.getElementById('selEndMonth').value,10)||sm;
-    return Math.max(1, em-sm+1);
-  }
-  const e=document.getElementById('selNumMeses');const v=e?parseInt(e.value,10):1;return v>0?v:1;
+  const e=document.getElementById('selNumMeses');
+  const v=e?parseInt(e.value,10):1;
+  return Math.min(maxNumMeses(), Math.max(1, v>0?v:1));
 }
+/* Ano civil completo — com o teto acima, só possível com Janeiro + 12 meses. */
+function isFullYear(){ return numMeses()===12; }
 function isSingleMonth(){return numMeses()===1;}
 function startMonth(){
   const sm=document.getElementById('selStartMonth'), sy=document.getElementById('selStartYear');
@@ -1217,11 +1222,9 @@ const MONTHS_PT=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','
 function initSelectors(){
   const sm=document.getElementById('selStartMonth');
   sm.innerHTML=MONTHS_PT.map((mn,i)=>`<option value="${i+1}">${mn}</option>`).join('');
-  const em=document.getElementById('selEndMonth');
-  em.innerHTML=MONTHS_PT.map((mn,i)=>`<option value="${i+1}">${mn}</option>`).join('');
   const now=new Date();
   sm.value=now.getMonth()+1;
-  em.value=now.getMonth()+1;
+  fillNumMesesOptions();
   document.getElementById('selStartYear').value=now.getFullYear();
   const sb=document.getElementById('selWeeklyBase');
   sb.innerHTML=[40,42].map(h=>`<option value="${h}" ${h===40?'selected':''}>${h} h/semana</option>`).join('');
@@ -1242,12 +1245,26 @@ function initSelectors(){
   updateWeeklyHint(); updatePeriodAvailability();
 }
 function onStartMonthChange(){
-  // Variável: Mês final nunca pode ficar antes do Mês inicial (mesmo ano).
-  if(UI.periodMode==='variavel'){
-    const sm=document.getElementById('selStartMonth'), em=document.getElementById('selEndMonth');
-    if(sm && em && parseInt(em.value,10)<parseInt(sm.value,10)) em.value=sm.value;
-  }
+  fillNumMesesOptions();          // o teto muda com o mês inicial
   updatePeriodAvailability(); buildCalendar();
+}
+/* Opções de "Nº de meses": 1..maxNumMeses(), mantendo a escolha atual sempre
+   que ainda couber; se deixar de caber, fica no máximo possível. */
+function fillNumMesesOptions(){
+  const e=document.getElementById('selNumMeses'); if(!e) return;
+  const max=maxNumMeses(), cur=parseInt(e.value,10)||1;
+  let html=''; for(let i=1;i<=max;i++) html+=`<option value="${i}">${i} ${i===1?'mês':'meses'}</option>`;
+  e.innerHTML=html;
+  e.value=String(Math.min(cur,max));
+}
+/* Défice: escondido por defeito (na maioria dos períodos não há) e irrelevante
+   com o ano inteiro inserido — não há período anterior de onde transitar. */
+function toggleDeficit(){
+  const chk=document.getElementById('chkDeficit'), row=document.getElementById('deficitRow');
+  const on=!!(chk&&chk.checked);
+  if(row) row.style.display = on?'':'none';
+  if(!on){ const i=document.getElementById('inpInitialDeficit'); if(i) i.value='0'; }
+  if(UI.lastResult) calculate();
 }
 function onNumMesesChange(){ updatePeriodAvailability(); buildCalendar(); }
 
@@ -1258,11 +1275,16 @@ function updatePeriodAvailability(){
   const l2=document.getElementById('priorMonthLabel2'); if(l2) l2.textContent=anchor;
   const hint=document.getElementById('periodModeHint');
   if(hint){
-    hint.innerHTML = UI.periodMode==='anual'
-      ? 'Período de <b>1 ano</b> (Janeiro–Dezembro) + dias das semanas de fronteira nas duas pontas.'
-      : UI.periodMode==='variavel'
-      ? `Período de <b>${numMeses()} ${numMeses()===1?'mês':'meses'}</b> (mesmo ano) + dias das semanas de fronteira nas duas pontas.`
-      : 'Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas.';
+    const nm=numMeses(), lastM=MONTHS_PT[startMonth().m+nm-2];
+    hint.innerHTML = isFullYear()
+      ? 'Período de <b>1 ano civil</b> (Janeiro–Dezembro) + dias das semanas de fronteira nas duas pontas.'
+      : `Período de <b>${nm} ${nm===1?'mês':'meses'}</b> (até ${lastM}, sem passar para o ano seguinte) + dias das semanas de fronteira nas duas pontas.`;
+  }
+  // O défice não se aplica quando o ano inteiro está inserido.
+  const dtr=document.getElementById('deficitToggleRow');
+  if(dtr) dtr.style.display = isFullYear()?'none':'';
+  if(isFullYear()){
+    const dr=document.getElementById('deficitRow'); if(dr) dr.style.display='none';
   }
 }
 function updateWeeklyHint(){
@@ -1302,27 +1324,8 @@ function switchOutputTab(mode){
 // cobrir um ano parcial) ou Variável (Mês inicial + Mês final, mesmo ano —
 // igual ao Mensal em tudo, só que o período pode ter vários meses).
 // Ponto 1 (Contrato) é sempre igual nos três modos.
-function switchPeriodMode(mode){
-  UI.periodMode = mode;
-  document.getElementById('tabPeriodMensal').classList.toggle('active', mode==='mensal');
-  document.getElementById('tabPeriodAnual').classList.toggle('active', mode==='anual');
-  document.getElementById('tabPeriodVariavel').classList.toggle('active', mode==='variavel');
-  const isAnual = mode==='anual';
-  const isVariavel = mode==='variavel';
-  const lblMonth=document.getElementById('lblStartMonth'); if(lblMonth) lblMonth.style.display = isAnual?'none':'';
-  const lblEndMonth=document.getElementById('lblEndMonth'); if(lblEndMonth) lblEndMonth.style.display = isVariavel?'':'none';
-  const deficitRow=document.getElementById('deficitRow'); if(deficitRow) deficitRow.style.display = isAnual?'none':'';
-  if(isAnual){
-    const sm=document.getElementById('selStartMonth'); if(sm) sm.value='1';   // sempre Janeiro-Dezembro
-  }
-  if(isVariavel){
-    // garante Mês final >= Mês inicial (mesmo ano) ao entrar no modo
-    const sm=document.getElementById('selStartMonth'), em=document.getElementById('selEndMonth');
-    if(sm && em && parseInt(em.value,10)<parseInt(sm.value,10)) em.value=sm.value;
-  }
-  updatePeriodAvailability();
-  buildCalendar();
-}
+/* switchPeriodMode() foi removido: já não há modos Mensal/Anual/Variável — o
+   período é sempre "mês inicial + nº de meses", com o teto de maxNumMeses(). */
 /* ---- MANUAL ---- */
 /* Constrói as linhas manuais a partir de selectedMonths() — sempre N meses
    SEGUIDOS a contar do mês inicial (ver PARTE E). Para CADA mês, alarga aos
@@ -1543,7 +1546,7 @@ function isDL119Enabled(){ const e=document.getElementById('chkDL119'); return !
 // ao total do período para o limite anual do DL119 (250h/150h) ser avaliado
 // corretamente mesmo quando nem todos os meses do ano estão na ferramenta.
 function dl119PriorHours(){
-  if(UI.periodMode==='anual') return 0;   // ano inteiro inserido -> nao ha horas Extra "previas" a somar
+  if(isFullYear()) return 0;   // ano inteiro inserido -> nao ha horas Extra "previas" a somar
   const e=document.getElementById('inpDL119PriorHours'); const v=e?parseFloat(e.value):0; return v>0?v:0;
 }
 
@@ -1557,7 +1560,7 @@ function calculate(){
 
   // DL119 é calculado ANTES do Output 1, para que as suas linhas/valores já
   // entrem na tabela de resumo (renderSummary) em vez de ficarem num card à parte.
-  const isAnual = UI.periodMode==='anual';
+  const isAnual = isFullYear();
   const weekendRow=document.getElementById('dl119WeekendConfirmRow');
   const lastBlockRow=document.getElementById('dl119LastBlockRow');
   const priorHoursRow=document.getElementById('dl119PriorHoursRow');
@@ -1619,7 +1622,7 @@ function calculate(){
   renderValidation(result.warnings);
   renderSummary(result.summary,result,dl119);
   // Output 2 (detalhe por turno) só faz sentido para 1 mês -> escondido em Anual/Variável.
-  if(UI.periodMode!=='mensal'){ document.getElementById('shiftsCard').style.display='none'; }
+  if(numMeses()>1){ document.getElementById('shiftsCard').style.display='none'; }
   else { renderShifts(result.shifts.filter(s=>s.isER)); }
   renderAnnual(result,dl119,dl119Projected);
   renderDL119Extras(dl119, windows, priorH, erHoursYear);
@@ -1672,7 +1675,9 @@ function renderSummary(summary,result,dl119){
     const showVal=(isBase||isPlenaSup||r.isER||r.isTN)?eur(val):'—';
     const rate=isBase?hourlyBase:(isPlenaSup?null:(r.mult?round2(hourlyExtra*r.mult):null));
     const showRate=(rate!=null)?eur(rate)+(r.mult&&!isBase?` (×${r.mult})`:''):'—';
-    const baseNote = pb.n>1 ? `Vencimento base · ${pb.n} meses do período` : 'Vencimento base mensal';
+    const baseNote = (pb.subJune>0||pb.subDec>0)
+      ? `Vencimento base · ${pb.n} ${pb.n===1?'mês':'meses'} + subsídios (férias/Natal)`
+      : `Vencimento base · ${pb.n} ${pb.n===1?'mês':'meses'} do período`;
     const note=isBase?baseNote:(isPlenaSup?'Regime de Dedicação Plena (25% sobre o vencimento base, pago 14×/ano)':(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—'))));
     return `<tr>
       <td><span class="badge code">${r.code}</span></td>
@@ -1758,10 +1763,11 @@ function renderAnnual(result,dl119,dl119Projected){
   const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
   const pb=periodBaseWithSubsidios();
   const extra=result.totalExtraEur||0, n=numMeses(), full=(n===12);
-  // Vencimento base + subsídios: SEMPRE o valor real do período inserido
-  // (nunca extrapolado — o vencimento mensal é determinístico, ao contrário
-  // das horas extra). Ver periodBaseWithSubsidios().
-  const baseAnnual=pb.total;
+  // Base ANUALIZADA. Com o ano civil completo é a soma real (que já dá 14×).
+  // Com menos meses tem de ser anualizada na mesma — 14 × vencimento mensal
+  // (12 meses + subsídios de férias e de Natal) — senão o cartão somaria a
+  // base de 1 mês com 12 meses de extra e chamaria "TOTAL ANUAL" ao resultado.
+  const baseAnnual = full ? pb.total : round2(pb.monthlyBase*14);
   const plenaSup=plenaSupplementOf(baseAnnual);
   // 12 meses inseridos: soma real, sem escalar. Menos de 12: extrapola ×(12/n).
   const extraAnnual = full ? extra : round2(extra*(12/n));
@@ -1774,19 +1780,21 @@ function renderAnnual(result,dl119,dl119Projected){
                          : (dl119Projected&&dl119Projected.applies?dl119Projected.netAdjustmentEur:0);
   const dl119Applies = full ? !!(dl119&&dl119.applies) : !!(dl119Projected&&dl119Projected.applies);
   const total=baseAnnual+extraAnnual+dl119Eur;
-  const baseDetail = `${eur(pb.monthlyBase)} × ${pb.n}`+
-    (pb.subJune>0?` + féria ${pb.firstHalf}/6`:'')+
-    (pb.subDec>0?` + Natal ${pb.secondHalf}/6`:'');
+  const baseDetail = full
+    ? `${eur(pb.monthlyBase)} × ${pb.n}`+
+      (pb.subJune>0?` + férias ${pb.firstHalf}/6`:'')+
+      (pb.subDec>0?` + Natal ${pb.secondHalf}/6`:'')
+    : `${eur(pb.monthlyBase)} × 14 (12 meses + férias + Natal)`;
   const supRow=plenaSup>0?`<tr><td class="small">— dos quais suplemento Dedicação Plena (25% do ordenado base)</td><td class="num small">incluído acima</td><td class="num">${eur(plenaSup)}</td></tr>`:'';
   const dl119Row = dl119Applies ? `<tr><td>DL119/2026 ${full?'(dados inseridos)':'(projeção — ritmo do período mantido até Dez.)'}</td>` +
     `<td class="num small">${full?'ajuste real':'recalculado sobre horas projetadas'}</td><td class="num">${eur(dl119Eur)}</td></tr>` : '';
   tb.innerHTML=
-    `<tr><td>Vencimento base${pb.n>1?` (${pb.n} meses)`:''} + subsídios</td><td class="num small">${baseDetail}</td><td class="num">${eur(baseAnnual)}</td></tr>`+
+    `<tr><td>Vencimento base + subsídios ${full?`(${pb.n} meses inseridos)`:'(anualizado)'}</td><td class="num small">${baseDetail}</td><td class="num">${eur(baseAnnual)}</td></tr>`+
     supRow+
     `<tr><td>Extra ER+TN ${full?`(${n} meses inseridos)`:`(${n} ${n===1?'mês':'meses'} → projeção ×12/${n})`}</td>`+
     `<td class="num small">${full?'soma real':eur(extra)+` × 12/${n}`}</td><td class="num">${eur(extraAnnual)}</td></tr>`+
     dl119Row;
-  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto, base real${full?', dados inseridos':' + extra e DL119 estimados'})</td><td class="num">${eur(total)}</td></tr>`;
+  tf.innerHTML=`<tr style="font-weight:700;background:#0b1220"><td colspan="2">TOTAL ANUAL (bruto${full?', dados inseridos':' — base anualizada, extra e DL119 estimados'})</td><td class="num">${eur(total)}</td></tr>`;
 }
 
 // Complementa renderSummary (que já mostra as linhas/valores DL119 na

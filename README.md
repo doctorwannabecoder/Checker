@@ -16,8 +16,9 @@ A aplicação está organizada em quatro pontos:
 1. **Ponto 1 · Contrato** — categoria profissional (Assistente, Assistente
    Graduado, Assistente Graduado Sénior, Internato Médico Anos 1-3 e Anos 4-6),
    regime e tempo de trabalho semanal. Daqui saem os valores/hora da tabela SIM.
-2. **Ponto 2 · Período** — modo de período (ver abaixo), mais o défice de horas
-   transitado.
+2. **Ponto 2 · Período** — **mês inicial** + **nº de meses** + ano (ver abaixo).
+   O défice de horas transitado está atrás de um interruptor, porque na maioria
+   dos períodos não há nenhum.
 3. **Ponto 3 · Incentivo excecional DL 119/2026** — opcional, ligado por
    interruptor. Só aparece o resto do ponto quando está ativo.
 4. **Ponto 4 · Entrada** — inserção manual num **calendário** (semanas na
@@ -31,12 +32,20 @@ A aplicação está organizada em quatro pontos:
 
 Depois, **Calcular pagamento**.
 
-### Modos de período
+### Período
 
-- **Mensal** — um mês, mais os dias das semanas de fronteira nas duas pontas.
-- **Anual** — ano civil completo (Jan–Dez). Pré-preenche todos os dias como
-  Rotina e esconde o Output 2 (impraticável para um ano inteiro).
-- **Variável** — vários meses consecutivos do mesmo ano.
+O período é sempre **mês inicial + nº de meses**, mais os dias das semanas de
+fronteira nas duas pontas. Não há modos separados.
+
+O nº de meses tem um **teto que impede o período de atravessar para Janeiro do
+ano seguinte**: começando em Agosto o máximo é 5 (Ago–Dez), em Dezembro é 1.
+Assim os subsídios de férias/Natal e o limite anual do DL 119/2026 ficam sempre
+dentro do mesmo ano civil.
+
+**Janeiro + 12 meses** é o ano civil completo — o único caso em que o teto o
+permite. Nesse caso o défice deixa de se aplicar (não há período anterior de
+onde transitar), as horas ER prévias do DL 119 são ignoradas, e o Output 2
+(detalhe por turno) é escondido por ser impraticável ao longo de um ano.
 
 ### Semana completa
 

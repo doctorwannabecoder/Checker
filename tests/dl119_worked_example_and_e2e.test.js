@@ -33,11 +33,7 @@ assertEqual(r2.blocks[0].majorado, true, 'com majoracao: bloco fica marcado majo
 assertEqual(r2.netIncentiveEur>r.netIncentiveEur, true, 'com majoracao: incentivo maior que sem majoracao');
 
 // --- Fim-a-fim: calculate() com DL119 ativo nao rebenta, mesmo com muitas horas ER ---
-switchPeriodMode('mensal');
-document.getElementById('selStartMonth').value='5';
-document.getElementById('selStartYear').value='2026';
-updatePeriodAvailability();
-buildCalendar();
+setPeriod(5,1,2026);
 let count=0;
 for(const row of UI.manualRows){
   if(row.inMonth){ const dow=parseISO(row.date).getDay();

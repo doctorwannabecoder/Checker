@@ -6,7 +6,7 @@ document.getElementById('selRegime').value='plena';
 document.getElementById('selStartYear').value='2026';
 
 // --- Output 3, periodo COMPLETO (12 meses reais): usa o ajuste DL119 REAL diretamente ---
-switchPeriodMode('anual');
+setPeriod(1,12);                 // ano civil completo
 const fakeResult={totalExtraEur:1000, totalErHours:300};
 const fakeDl119={applies:true, netAdjustmentEur:777.77};
 renderAnnual(fakeResult, fakeDl119, null);
@@ -25,10 +25,7 @@ assertEqual(document.querySelector('#annualTable tbody').innerHTML.includes('DL1
 
 // --- Output 3, periodo PARCIAL (Variavel): NAO escala o ajuste real x12/n
 // (nao-linear) -- usa dl119Projected, recalculado sobre o total anual projetado ---
-switchPeriodMode('variavel');
-document.getElementById('selStartMonth').value='3';
-document.getElementById('selEndMonth').value='8';
-onStartMonthChange();
+setPeriod(3,6);                  // Mar-Ago (periodo parcial)
 document.getElementById('chkDL119').checked=true;
 document.getElementById('inpDL119PriorHours').value='260';   // ja > 250h (limite plena)
 calculate();

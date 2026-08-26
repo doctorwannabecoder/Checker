@@ -1,65 +1,75 @@
 const {loadApp}=require('./harness');
 const app=loadApp();
 app.run(`
+/* Periodo = mes inicial + nº de meses, com um teto que impede o periodo de
+   atravessar para Janeiro do ano seguinte. Nao ha modos Mensal/Anual/Variavel. */
 document.getElementById('selCategory').value='assistente';
 document.getElementById('selRegime').value='geral';
 document.getElementById('selStartYear').value='2026';
 
-// --- Mensal (defeito) ---
-document.getElementById('selStartMonth').value='5';
-updatePeriodAvailability();
-buildCalendar();
-assertEqual(UI.periodMode, 'mensal', 'defeito: periodMode=mensal');
-assertEqual(numMeses(), 1, 'mensal: numMeses()=1');
+// --- 1 mes (defeito) ---
+setPeriod(5,1);
+assertEqual(numMeses(), 1, '1 mes: numMeses()=1');
+assertEqual(isFullYear(), false, '1 mes: nao e ano completo');
 const mayRows=UI.manualRows.filter(r=>r.inMonth);
 const hasWeekendBlank=mayRows.some(r=>{const dow=parseISO(r.date).getDay(); return (dow===0||dow===6)&&r.work==='';});
-assertEqual(hasWeekendBlank, true, 'mensal: fim de semana sem prefill automatico');
+assertEqual(hasWeekendBlank, true, '1 mes: fim de semana sem prefill automatico');
 
-// --- Anual ---
-switchPeriodMode('anual');
-assertEqual(UI.periodMode, 'anual', 'anual: periodMode=anual');
-assertEqual(numMeses(), 12, 'anual: numMeses()=12 (Jan-Dez)');
-assertEqual(document.getElementById('selStartMonth').value, '1', 'anual: forca mes inicial=Janeiro');
-assertEqual(UI.periodRanges.length, 12, 'anual: 12 meses em periodRanges');
-assertEqual(UI.periodRanges[0].firstISO, '2026-01-01', 'anual: comeca a 1 de Janeiro');
-assertEqual(UI.periodRanges[11].lastISO, '2026-12-31', 'anual: termina a 31 de Dezembro');
+// --- Janeiro + 12 meses = ano civil completo ---
+setPeriod(1,12);
+assertEqual(numMeses(), 12, 'Jan+12: numMeses()=12');
+assertEqual(isFullYear(), true, 'Jan+12: isFullYear()');
+assertEqual(UI.periodRanges.length, 12, 'Jan+12: 12 meses em periodRanges');
+assertEqual(UI.periodRanges[0].firstISO, '2026-01-01', 'Jan+12: comeca a 1 de Janeiro');
+assertEqual(UI.periodRanges[11].lastISO, '2026-12-31', 'Jan+12: termina a 31 de Dezembro');
 const anualRows=UI.manualRows.filter(r=>r.inMonth);
-assertEqual(anualRows.length, 365, 'anual 2026 (nao bissexto): 365 dias');
-// prefill: dia util sem feriado=Rotina; feriado em dia util=Folga; qualquer fim de semana (mesmo feriado)=vazio
+assertEqual(anualRows.length, 365, 'Jan+12 em 2026 (nao bissexto): 365 dias');
+// prefill: dia util sem feriado=Rotina; feriado em dia util=Folga; fim de semana=vazio
 const weekdayNonHoliday=anualRows.filter(r=>dayKind(r.date)==='weekday');
-assertEqual(weekdayNonHoliday.every(r=>r.work==='rotina'), true, 'anual: dias uteis sem feriado -> Rotina');
+assertEqual(weekdayNonHoliday.every(r=>r.work==='rotina'), true, 'dias uteis sem feriado -> Rotina');
 const weekdayHoliday=anualRows.filter(r=>{const dow=parseISO(r.date).getDay(); return dayKind(r.date)==='holiday'&&dow!==0&&dow!==6;});
-assertEqual(weekdayHoliday.every(r=>r.work==='folga'), true, 'anual: feriados em dia util -> Folga');
+assertEqual(weekdayHoliday.every(r=>r.work==='folga'), true, 'feriados em dia util -> Folga');
 const anyWeekend=anualRows.filter(r=>{const dow=parseISO(r.date).getDay(); return dow===0||dow===6;});
-assertEqual(anyWeekend.every(r=>r.work===''), true, 'anual: qualquer fim de semana (mesmo feriado) -> sem prefill');
+assertEqual(anyWeekend.every(r=>r.work===''), true, 'qualquer fim de semana (mesmo feriado) -> sem prefill');
 
-// --- Variavel ---
-switchPeriodMode('variavel');
-document.getElementById('selStartMonth').value='3';
-document.getElementById('selEndMonth').value='7';
-onStartMonthChange();
-assertEqual(UI.periodMode, 'variavel', 'variavel: periodMode=variavel');
-assertEqual(numMeses(), 5, 'variavel Mar-Jul: 5 meses');
-assertEqual(UI.periodRanges[0].m, 3, 'variavel: primeiro mes = Marco');
-assertEqual(UI.periodRanges[4].m, 7, 'variavel: ultimo mes = Julho');
+// --- Periodo parcial de varios meses ---
+setPeriod(3,5);
+assertEqual(numMeses(), 5, 'Mar+5: 5 meses');
+assertEqual(isFullYear(), false, 'Mar+5: nao e ano completo');
+assertEqual(UI.periodRanges[0].m, 3, 'Mar+5: primeiro mes = Marco');
+assertEqual(UI.periodRanges[4].m, 7, 'Mar+5: ultimo mes = Julho');
 const varRows=UI.manualRows.filter(r=>r.inMonth);
-const varWeekdayNonHoliday=varRows.filter(r=>dayKind(r.date)==='weekday');
-assertEqual(varWeekdayNonHoliday.every(r=>r.work==='rotina'), true, 'variavel: mesmo prefill que mensal/anual (Rotina em dia util)');
+assertEqual(varRows.filter(r=>dayKind(r.date)==='weekday').every(r=>r.work==='rotina'), true,
+  'periodo parcial: mesmo prefill (Rotina em dia util)');
 
-// Mes final nao pode ficar antes do mes inicial (mesmo ano)
+// --- Teto: o periodo nunca atravessa para Janeiro do ano seguinte ---
+document.getElementById('selStartMonth').value='1';  assertEqual(maxNumMeses(), 12, 'Janeiro: teto 12 meses');
+document.getElementById('selStartMonth').value='8';  assertEqual(maxNumMeses(),  5, 'Agosto: teto 5 meses (Ago-Dez)');
+document.getElementById('selStartMonth').value='12'; assertEqual(maxNumMeses(),  1, 'Dezembro: teto 1 mes');
+
+// numMeses() nunca devolve mais do que o teto, mesmo com um valor antigo maior
+document.getElementById('selStartMonth').value='10';
+document.getElementById('selNumMeses').value='12';
+assertEqual(numMeses(), 3, 'Outubro com 12 guardado: numMeses() limitado a 3 (Out-Dez)');
+
+// fillNumMesesOptions() corta a escolha atual quando o mes inicial a torna impossivel
+setPeriod(1,12);
 document.getElementById('selStartMonth').value='9';
-onStartMonthChange();
-assertEqual(document.getElementById('selEndMonth').value, '9', 'variavel: mes final e corrigido para nao ficar antes do inicial');
+fillNumMesesOptions();
+assertEqual(document.getElementById('selNumMeses').value, '4', 'Setembro: 12 meses cai para o maximo (4)');
+const opts=document.getElementById('selNumMeses').innerHTML;
+assertEqual((opts.match(/<option/g)||[]).length, 4, 'Setembro: so 4 opcoes de nº de meses');
 
-// --- Voltar a Mensal: prefill volta ao normal ---
-switchPeriodMode('mensal');
-document.getElementById('selStartMonth').value='5';
-updatePeriodAvailability();
-buildCalendar();
-assertEqual(numMeses(), 1, 'de volta a mensal: numMeses()=1');
-const backRows=UI.manualRows.filter(r=>r.inMonth);
-assertEqual(backRows.some(r=>{const dow=parseISO(r.date).getDay(); return (dow===0||dow===6)&&r.work==='';}), true,
-  'de volta a mensal: fim de semana sem Rotina automatica');
+// o ultimo mes do periodo e sempre Dezembro ou antes
+setPeriod(9,4);
+assertEqual(UI.periodRanges[UI.periodRanges.length-1].m, 12, 'Set+4: ultimo mes = Dezembro');
+assertEqual(UI.periodRanges.every(r=>r.y===2026), true, 'Set+4: todos os meses no mesmo ano civil');
 
-console.log('OK: switchPeriodMode()/numMeses()/prefill (mensal, anual, variavel) — '+CHECKS_RUN+' assercoes.');
+// --- Voltar a 1 mes ---
+setPeriod(5,1);
+assertEqual(numMeses(), 1, 'de volta a 1 mes: numMeses()=1');
+assertEqual(UI.manualRows.filter(r=>r.inMonth).some(r=>{const dow=parseISO(r.date).getDay(); return (dow===0||dow===6)&&r.work==='';}), true,
+  'de volta a 1 mes: fim de semana sem Rotina automatica');
+
+console.log('OK: periodo = mes inicial + nº de meses, com teto ate Dezembro — '+CHECKS_RUN+' assercoes.');
 `);

@@ -5,10 +5,11 @@ document.getElementById('selCategory').value='assistente';
 document.getElementById('selStartYear').value='2026';
 
 function calcFor(mode, regime){
-  switchPeriodMode(mode);
   document.getElementById('selRegime').value=regime;
-  if(mode==='mensal'){ document.getElementById('selStartMonth').value='5'; updatePeriodAvailability(); buildCalendar(); }
-  if(mode==='variavel'){ document.getElementById('selStartMonth').value='4'; document.getElementById('selEndMonth').value='6'; onStartMonthChange(); }
+  // 'mensal' = 1 mes (Maio) · 'anual' = ano civil completo · 'variavel' = Abr-Jun
+  if(mode==='mensal') setPeriod(5,1);
+  else if(mode==='anual') setPeriod(1,12);
+  else setPeriod(4,3);
   document.getElementById('chkDL119').checked=false;
   calculate();
 }

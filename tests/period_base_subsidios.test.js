@@ -30,7 +30,7 @@ assertEqual(pb.secondHalf, 1, 'Mensal/Dezembro: 1 dos 6 meses Jul-Dez presente')
 assertClose(pb.subDec, round2(pb.monthlyBase*(1/6)), 'Mensal/Dezembro: subsidio = 1/6 do vencimento');
 
 // Caso 4: Anual (12 meses) -- tem de dar EXATAMENTE monthlyBase*14 (formula antiga, flat)
-switchPeriodMode('anual');
+setPeriod(1,12);
 pb=periodBaseWithSubsidios();
 assertEqual(pb.n, 12, 'Anual: n=12');
 assertClose(pb.subJune, pb.monthlyBase, 'Anual: subsidio de ferias = 1 mes inteiro (6/6)');
@@ -38,10 +38,7 @@ assertClose(pb.subDec, pb.monthlyBase, 'Anual: subsidio de Natal = 1 mes inteiro
 assertClose(pb.total, round2(pb.monthlyBase*14), 'Anual: total = monthlyBase x14 exatamente');
 
 // Caso 5: Variavel Mar-Ago (6 meses, inclui Junho mas nao Dezembro)
-switchPeriodMode('variavel');
-document.getElementById('selStartMonth').value='3';
-document.getElementById('selEndMonth').value='8';
-onStartMonthChange();
+setPeriod(3,6);                  // Mar-Ago
 pb=periodBaseWithSubsidios();
 assertEqual(pb.n, 6, 'Variavel Mar-Ago: n=6');
 assertEqual(pb.firstHalf, 4, 'Variavel Mar-Ago: 4 dos 6 meses Jan-Jun presentes (Mar,Abr,Mai,Jun)');
@@ -50,16 +47,13 @@ assertClose(pb.subJune, round2(pb.monthlyBase*4/6), 'Variavel Mar-Ago: subsidio 
 assertEqual(pb.subDec, 0, 'Variavel Mar-Ago: sem subsidio de Natal');
 
 // Caso 6 (exemplo do utilizador): so 3 dos 6 meses Jan-Jun trabalhados -> metade do subsidio
-document.getElementById('selStartMonth').value='4';
-document.getElementById('selEndMonth').value='6';
-onStartMonthChange();
+setPeriod(4,3);                  // Abr-Jun
 pb=periodBaseWithSubsidios();
 assertEqual(pb.firstHalf, 3, 'Variavel Abr-Jun: 3 dos 6 meses Jan-Jun presentes');
 assertClose(pb.subJune, round2(pb.monthlyBase*0.5), 'Variavel Abr-Jun: 3/6 = metade do subsidio');
 
 // Caso 7: a correcao aplica-se a QUALQUER regime, nao so Plena
-switchPeriodMode('anual');
-document.getElementById('selStartMonth').value='1';
+setPeriod(1,12);
 document.getElementById('selRegime').value='plena';
 const pbPlena=periodBaseWithSubsidios();
 const supPlena=plenaSupplementOf(pbPlena.total);

@@ -115,6 +115,19 @@ function loadApp(){
   elFor('selTardeH').value='6';
   elFor('selExtraH').value='4';
   elFor('selBolsaH').value='4';
+
+  /* Atalho de teste: define o periodo (mes inicial + nº de meses) e reconstroi
+     o calendario -- substitui o antigo switchPeriodMode('mensal'/'anual'/...).
+     n=12 com m=1 e o ano civil completo (isFullYear()). */
+  ctx.setPeriod=(m,n,year)=>{
+    elFor('selStartMonth').value=String(m);
+    if(year!=null) elFor('selStartYear').value=String(year);
+    ctx.fillNumMesesOptions();
+    elFor('selNumMeses').value=String(n);
+    ctx.updatePeriodAvailability();
+    ctx.buildCalendar();
+  };
+
   return {
     ctx,
     run(code){ return vm.runInContext(code, ctx); }
