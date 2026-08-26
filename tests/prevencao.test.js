@@ -24,6 +24,14 @@ assert(!!prevRow, 'Output 1 tem a linha PREV');
 assertClose(prevRow.hours, 12, 0.01, 'Prevencao: 12 horas');
 assertClose(prevRow.eur, R*MULT_SUM*0.5, 0.01, 'Prevencao: metade do valor/hora do turno');
 
+// A Prevencao E paga: tem de entrar no total do periodo, senao o TOTAL do
+// Output 1 fica a menos do que o recibo.
+assertClose(res.prevEur, prevRow.eur, 0.01, "prevEur do periodo = valor da linha PREV");
+assertClose(res.totalExtraEur, prevRow.eur, 0.01, "totalExtraEur inclui a Prevencao");
+// coeficiente efetivo: Horas x EUR/hora x Coef = Valor
+assertClose(prevRow.mult, round2(prevRow.eur/(prevRow.hours*R)), 0.01,
+  "coeficiente da linha PREV e o efetivo (media ponderada x0,5)");
+
 // Disponibilidade, nao trabalho efetivo.
 assertEqual(res.totalErHours, 0, 'Prevencao nao conta como horas ER (limite anual DL119)');
 assertEqual(res.summary.some(r=>r.isER&&r.hours>0), false, 'Prevencao nao gera linhas ER');

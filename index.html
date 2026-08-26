@@ -103,6 +103,11 @@
   .kv{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0;font-size:13px}
   .kv span b{color:var(--text)}
   .splitline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
+  #shiftsTable td.shiftcell{background:var(--panel2);vertical-align:middle;white-space:nowrap}
+  #shiftsTable td.shiftcell.fds{border-left:4px solid var(--h24)}
+  #shiftsTable td.shiftcell.weekday{border-left:4px solid var(--day)}
+  #shiftsTable tr.shiftstart td{border-top:2px solid var(--line)}
+  #shiftsTable tr.shifttotal td{background:#0b1220;font-weight:700}
   .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .pill.er{background:var(--day);color:#06283b}
@@ -268,7 +273,7 @@
     <div style="overflow-x:auto">
       <table id="summaryTable">
         <thead><tr><th>Categoria</th><th>Descrição / Tipo</th><th class="num">Horas</th>
-          <th class="num">€/hora</th><th class="num">Valor (€)</th><th>Notas</th></tr></thead>
+          <th class="num">€/hora</th><th class="num">Coef.</th><th class="num">Valor (€)</th></tr></thead>
         <tbody></tbody><tfoot></tfoot>
       </table>
     </div>
@@ -295,10 +300,8 @@
 
   <!-- OUTPUT 2 -->
   <div id="shiftsCard" class="card" style="display:none">
-    <h2>Output 2 · Detalhe individual por turno ER
-      <button class="btn secondary noprint" style="font-size:12px;padding:4px 10px;margin-left:8px;vertical-align:middle" onclick="copyShifts()">📋 Copiar</button>
-    </h2>
-    <div id="shiftsArea"></div>
+    <h2>Output 2 · Horas por turno ER</h2>
+    <div id="shiftsArea" style="overflow-x:auto"></div>
   </div>
   </div>
 
@@ -603,6 +606,10 @@ function categoryFor(dateISO, tod){
    noite → suplemento TN), contractDayMin['CAT'] (contrato de dia → só base). */
 function classifyErShift(dateISO, startMin, durMin, contractFillMin){
   const erMin={}, tnMin={}, contractDayMin={};
+  // Mesma repartição, mas guardada TAMBÉM por dia real (chave 'data|...'), para
+  // o Output 2 poder mostrar um turno noturno separado entre os dois dias que
+  // atravessa. Os totais agregados acima ficam intactos.
+  const erMinDay={}, tnMinDay={};
   const firstN=PAYROLL_RULES.firstHourMinutes.minutes;
   for(let m=0;m<durMin;m++){
     const abs=startMin+m, tod=((abs%1440)+1440)%1440, offDays=Math.floor(abs/1440);
@@ -610,15 +617,19 @@ function classifyErShift(dateISO, startMin, durMin, contractFillMin){
     const cat=categoryFor(realDate,tod);
     const seg=isNightMinute(tod)?'not':'diu';
     if(m<contractFillMin){
-      if(seg==='not') tnMin[cat]=(tnMin[cat]||0)+1; else contractDayMin[cat]=(contractDayMin[cat]||0)+1;
+      if(seg==='not'){
+        tnMin[cat]=(tnMin[cat]||0)+1;
+        const dk=realDate+'|'+cat; tnMinDay[dk]=(tnMinDay[dk]||0)+1;
+      } else contractDayMin[cat]=(contractDayMin[cat]||0)+1;
     } else {
       const em=m-contractFillMin;
       const order=(em<firstN)?'first':'seg';
       const k=cat+'|'+seg+'|'+order;
       erMin[k]=(erMin[k]||0)+1;
+      const dk=realDate+'|'+k; erMinDay[dk]=(erMinDay[dk]||0)+1;
     }
   }
-  return {erMin, tnMin, contractDayMin};
+  return {erMin, tnMin, contractDayMin, erMinDay, tnMinDay};
 }
 /* NB: não arredondar aqui — os valores são acumulados com precisão total e só
    arredondados na apresentação. Arredondar por turno introduzia cêntimos de
@@ -655,6 +666,7 @@ function computeEntry(entry, ctx, contractRem){
 
   const hourly=ctx.hourly||0;
   let totalH=durMin>0?durMin/60:0, tnH=0, erDayH=0, erNightH=0, contractDayH=0, erEur=0, tnEur=0;
+  let dayRows=[], endDate=date;
   let contractRemAfter=(typeof contractRem==='number')?contractRem:Infinity;
 
   // 1) Trabalho normal do dia (Rotina/Tarde/Extra/Bolsa/Folga) — pago pela
@@ -697,6 +709,29 @@ function computeEntry(entry, ctx, contractRem){
       tnH+=h; tnEur+=eur;
     });
     Object.values(cls.contractDayMin).forEach(mins=>{ contractDayH+=mins/60; });
+    // Repartição por dia real (Output 2): mesmas horas e mesmos valores dos
+    // totais acima, apenas agrupados pelo dia a que cada minuto pertence.
+    const dayMap={};
+    const pushDay=(rd,alloc)=>{ (dayMap[rd]=dayMap[rd]||[]).push(alloc); };
+    Object.entries(cls.erMinDay).forEach(([dk,mins])=>{
+      const [rd,cat,seg,order]=dk.split('|');
+      const key=CODE_MATRIX[cat] && CODE_MATRIX[cat][seg] ? CODE_MATRIX[cat][seg][order] : null;
+      const mult=(ER_MULTIPLIER[cat] && ER_MULTIPLIER[cat][seg])?ER_MULTIPLIER[cat][seg][order]:0;
+      const h=mins/60;
+      pushDay(rd, makeAlloc(key, h, h*hourly*mult, {mult}));
+    });
+    Object.entries(cls.tnMinDay).forEach(([dk,mins])=>{
+      const [rd,cat]=dk.split('|');
+      const h=mins/60;
+      pushDay(rd, makeAlloc(TN_MATRIX[cat]||'TN_DU', h, h*hourly*TN_UPLIFT.pct, {mult:TN_UPLIFT.pct}));
+    });
+    dayRows=Object.keys(dayMap).sort().map(d=>({
+      date:d,
+      allocations:dayMap[d].sort((a,b)=>String(a.code).localeCompare(String(b.code)))
+    }));
+    // Último dia tocado pelo turno — o Output 2 mostra um intervalo quando o
+    // turno atravessa a meia-noite.
+    endDate=iso(addDays(parseISO(date), Math.floor((startMin+durMin-1)/1440)));
   } else if(entry.er && durMin>0){
     warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir contrato/extraordinário e diurno/noturno.`});
   }
@@ -708,7 +743,7 @@ function computeEntry(entry, ctx, contractRem){
   //    Paga a metade do turno que cobriria estas horas — reutiliza a mesma
   //    classificação do ER (categoria × diurno/noturno × 1ª/seguintes) e
   //    aplica-lhe PAYROLL_RULES.preventionFactor.
-  let prevH=0;
+  let prevH=0, prevEur=0;
   if(entry.prevention){
     const pw=PAYROLL_RULES.preventionWindow;
     const pStart=timeToMin(pw.start), pEnd=timeToMin(pw.end);
@@ -716,14 +751,17 @@ function computeEntry(entry, ctx, contractRem){
     if(pDur>0){
       const pf=PAYROLL_RULES.preventionFactor.pct;
       const clsPrev=classifyErShift(date,pStart,pDur,0);
-      let prevEur=0;
       Object.entries(clsPrev.erMin).forEach(([k,mins])=>{
         const [cat,seg,order]=k.split('|');
         const mult=(ER_MULTIPLIER[cat] && ER_MULTIPLIER[cat][seg])?ER_MULTIPLIER[cat][seg][order]:0;
         prevEur += (mins/60)*hourly*mult*pf;
       });
       prevH=pDur/60;
-      addAlloc(allocMap,'PREV', prevH, prevEur, {mult:pf});
+      // Coeficiente EFETIVO (media ponderada dos multiplicadores × 0,5), para
+      // que a linha do Output 1 se leia Horas × €/hora × Coef. = Valor. O
+      // fator 0,5 sozinho nao daria, porque cada hora tem o seu multiplicador.
+      const effMult=(prevH>0&&hourly>0)?round2(prevEur/(prevH*hourly)):pf;
+      addAlloc(allocMap,'PREV', prevH, prevEur, {mult:effMult});
     }
   }
 
@@ -732,9 +770,10 @@ function computeEntry(entry, ctx, contractRem){
     date, kind, isFds, weekday:weekdayName(date), holiday:kind==='holiday'?holidayName(date):'',
     start:startMin!=null?minToHHMM(startMin):'', end:endMin!=null?minToHHMM(endMin):'',
     isER:!!entry.er, isPrev:!!entry.prevention, prevH:round2(prevH),
+    endDate, days:dayRows,
     totalH:round2(totalH), tnH:round2(tnH), erDayH:round2(erDayH), erNightH:round2(erNightH),
     contractDayH:round2(contractDayH),
-    erEur:round2(erEur), tnEur:round2(tnEur), shiftEur:round2(erEur+tnEur),
+    erEur:round2(erEur), tnEur:round2(tnEur), prevEur:round2(prevEur), shiftEur:round2(erEur+tnEur),
     allocations, warnings, contractRemAfter
   };
 }
@@ -811,8 +850,12 @@ function computeMonth(entries, ctx){
   const summary=Object.values(summaryMap).sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   const erEur=round2(shifts.reduce((s,r)=>s+(r.erEur||0),0));
   const tnEur=round2(shifts.reduce((s,r)=>s+(r.tnEur||0),0));
+  // A Prevenção é paga mas não é ER nem TN — entra no total do período à mesma,
+  // senão o TOTAL do Output 1 ficaria a menos do que o recibo.
+  const prevEur=round2(shifts.reduce((s,r)=>s+(r.prevEur||0),0));
   const totalErHours=round2(shifts.filter(s=>s.isER).reduce((s,r)=>s+r.erDayH+r.erNightH,0));
-  return {summary, shifts, warnings, weeklyStats, erEur, tnEur, totalExtraEur:round2(erEur+tnEur), totalErHours};
+  return {summary, shifts, warnings, weeklyStats, erEur, tnEur, prevEur,
+    totalExtraEur:round2(erEur+tnEur+prevEur), totalErHours};
 }
 
 /* =========================================================================
@@ -1672,20 +1715,24 @@ function renderSummary(summary,result,dl119){
     const isBase=(r.key==='RW');
     const isPlenaSup=(r.key==='PLENA_SUP');
     const val=isBase?baseOnly:(isPlenaSup?plenaSup:r.eur);
-    const showVal=(isBase||isPlenaSup||r.isER||r.isTN)?eur(val):'—';
-    const rate=isBase?hourlyBase:(isPlenaSup?null:(r.mult?round2(hourlyExtra*r.mult):null));
-    const showRate=(rate!=null)?eur(rate)+(r.mult&&!isBase?` (×${r.mult})`:''):'—';
+    // Qualquer linha com valor mostra-o (a Prevenção não é ER nem TN mas é paga).
+    const showVal=(isBase||isPlenaSup||r.isER||r.isTN||(r.eur||0)>0)?eur(val):'—';
+    // €/hora é agora sempre a base (SIM) — o multiplicador vive na coluna
+    // Coef., por isso a linha lê-se Horas × €/hora × Coef. = Valor.
+    const rate=isBase?hourlyBase:(isPlenaSup?null:(r.mult?hourlyExtra:null));
+    const showRate=(rate!=null)?eur(rate):'—';
+    const showCoef=(r.mult&&!isBase&&!isPlenaSup)?`×${r.mult}`:'—';
     const baseNote = (pb.subJune>0||pb.subDec>0)
       ? `Vencimento base · ${pb.n} ${pb.n===1?'mês':'meses'} + subsídios (férias/Natal)`
       : `Vencimento base · ${pb.n} ${pb.n===1?'mês':'meses'} do período`;
     const note=isBase?baseNote:(isPlenaSup?'Regime de Dedicação Plena (25% sobre o vencimento base, pago 14×/ano)':(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—'))));
     return `<tr>
       <td><span class="badge code">${r.code}</span></td>
-      <td>${r.desc}${codeBadges(r)}</td>
+      <td>${r.desc}${codeBadges(r)}<div class="small muted">${note}</div></td>
       <td class="num">${r.hours.toFixed(2)}</td>
       <td class="num small">${showRate}</td>
-      <td class="num">${showVal}</td>
-      <td class="small">${note}</td></tr>`;
+      <td class="num small">${showCoef}</td>
+      <td class="num">${showVal}</td></tr>`;
   }).join('');
 
   // Linhas DL119/2026 (só quando o incentivo se aplica): requalificação a 1×,
@@ -1696,27 +1743,28 @@ function renderSummary(summary,result,dl119){
   if(dl119Applies){
     const reqRow=`<tr>
       <td><span class="badge code">DL119</span></td>
-      <td>Requalificação a 1× (Art.4º/6, substitui o multiplicador ER normal)</td>
+      <td>Requalificação a 1× (Art.4º/6, substitui o multiplicador ER normal)<div class="small muted">Horas do(s) bloco(s) DL119 abaixo</div></td>
       <td class="num">${dl119.requalifiedHours.toFixed(2)}</td>
       <td class="num small">${eur(hourlyExtra)}</td>
-      <td class="num">${eur(dl119.requalifiedEurAt1x)}</td>
-      <td class="small">Horas do(s) bloco(s) DL119 abaixo</td></tr>`;
+      <td class="num small">×1</td>
+      <td class="num">${eur(dl119.requalifiedEurAt1x)}</td></tr>`;
     const clawRow=`<tr>
       <td><span class="badge code">DL119</span></td>
-      <td>Estorno do ER já calculado ao multiplicador normal (aprox.)</td>
+      <td>Estorno do ER já calculado ao multiplicador normal (aprox.)<div class="small muted">Aproximado pela média €/h ER do período</div></td>
       <td class="num">${dl119.requalifiedHours.toFixed(2)}</td>
       <td class="num small">—</td>
-      <td class="num">− ${eur(dl119.clawbackEur)}</td>
-      <td class="small">Aproximado pela média €/h ER do período</td></tr>`;
+      <td class="num small">—</td>
+      <td class="num">− ${eur(dl119.clawbackEur)}</td></tr>`;
     const blockRows=dl119.blocks.map(b=>{
       const status=b.partial?'parcial — bloco iniciado':(b.continuing?'concluído este período':'novo bloco');
       return `<tr>
         <td><span class="badge code">DL119</span></td>
-        <td>Incentivo bloco ${b.n}º (${status}, ${b.pct.toFixed(2)}%)</td>
+        <td>Incentivo bloco ${b.n}º (${status}, ${b.pct.toFixed(2)}%)
+          <div class="small"><label class="inline"><input type="checkbox" data-blockn="${b.n}" ${b.majorado?'checked':''} onchange="toggleDL119Block(${b.n})"/> majorado (Art.5º)</label></div></td>
         <td class="num">${b.hours.toFixed(2)}</td>
         <td class="num small">—</td>
-        <td class="num">${eur(b.value)}</td>
-        <td class="small"><label class="inline"><input type="checkbox" data-blockn="${b.n}" ${b.majorado?'checked':''} onchange="toggleDL119Block(${b.n})"/> majorado (Art.5º)</label></td></tr>`;
+        <td class="num small">—</td>
+        <td class="num">${eur(b.value)}</td></tr>`;
     }).join('');
     bodyHtml += reqRow+clawRow+blockRows;
     dl119Extra = dl119.netAdjustmentEur;
@@ -1726,36 +1774,61 @@ function renderSummary(summary,result,dl119){
   const totalExtra=(result?result.totalExtraEur:0)+dl119Extra;
   const totalEur=baseEur+totalExtra;
   const subRows=
-    (pb.subJune>0?`<tr><td colspan="4" class="small">— dos quais subsídio de férias (${pb.firstHalf}/6 meses Jan-Jun no período)</td><td class="num">${eur(pb.subJune)}</td><td></td></tr>`:'')+
-    (pb.subDec>0?`<tr><td colspan="4" class="small">— dos quais subsídio de Natal (${pb.secondHalf}/6 meses Jul-Dez no período)</td><td class="num">${eur(pb.subDec)}</td><td></td></tr>`:'');
-  const plenaNote = plenaSup>0 ? ' (inclui suplemento Dedicação Plena)' : '';
-  tf.innerHTML=subRows+`<tr style="font-weight:700;background:#0b1220">
-    <td colspan="4">TOTAIS · extra ER+TN${dl119Applies?'+DL119':''}</td>
-    <td class="num">${eur(totalExtra)}</td>
-    <td class="small">Base ${eur(baseEur)} + extra</td></tr>
-  <tr style="font-weight:700;background:#132030">
-    <td colspan="4">TOTAL · base + extra${plenaNote}</td>
-    <td class="num" colspan="2">${eur(totalEur)} bruto</td></tr>`;
+    (pb.subJune>0?`<tr><td colspan="5" class="small">— dos quais subsídio de férias (${pb.firstHalf}/6 meses Jan-Jun no período)</td><td class="num">${eur(pb.subJune)}</td></tr>`:'')+
+    (pb.subDec>0?`<tr><td colspan="5" class="small">— dos quais subsídio de Natal (${pb.secondHalf}/6 meses Jul-Dez no período)</td><td class="num">${eur(pb.subDec)}</td></tr>`:'');
+  const plenaNote = plenaSup>0 ? ' · inclui suplemento Dedicação Plena' : '';
+  // Uma única linha de total: base, extra e soma em colunas próprias.
+  tf.innerHTML=subRows+`<tr style="font-weight:700;background:#132030">
+    <td colspan="3">TOTAL · base + extra ER+TN${(result&&result.prevEur>0)?'+Prev':''}${dl119Applies?'+DL119':''}${plenaNote}</td>
+    <td class="num small">Base ${eur(baseEur)}</td>
+    <td class="num small">Extra ${eur(totalExtra)}</td>
+    <td class="num">${eur(totalEur)} bruto</td></tr>`;
 }
+/* Output 2 — uma tabela: 1ª coluna identifica o turno (com intervalo de datas
+   quando atravessa a meia-noite), depois uma linha por DIA × categoria. A
+   descrição e o coeficiente ficam numa coluna comum a todas as entradas. */
 function renderShifts(shifts){
   document.getElementById('shiftsCard').style.display='block';
   const area=document.getElementById('shiftsArea');
   if(!shifts.length){area.innerHTML=`<div class="muted">Nenhum turno ER no período.</div>`;return;}
-  area.innerHTML=shifts.map(s=>{
-    const allocs=s.allocations.filter(a=>a.isER||a.isTN).map(a=>{
-      const cls=a.isTN?'tn':'er';
-      const mult=a.mult?` <span class="small">(×${a.mult})</span>`:'';
-      return `<span class="splitline"><span class="pill ${cls}">${a.code}</span>
-        <span class="small">${a.desc}${codeBadges(a)} → <b>${a.hours.toFixed(2)} h</b>${mult} · <b>${eur(a.eur)}</b></span></span>`;
-    }).join('');
-    const w=s.warnings.length?`<div style="margin-top:6px">${s.warnings.map(x=>`<div class="alert ${x.type}" style="margin:4px 0">${x.msg}</div>`).join('')}</div>`:'';
-    return `<div class="shiftcard ${s.isFds?'fds':'weekday'}">
-      <h3>📅 ${formatPT(s.date)} · <span class="muted">${s.weekday}</span>
-        ${s.holiday?`<span class="badge" style="border-color:var(--err);color:#fecaca">${s.holiday}</span>`:''}
-        ${s.isFds?'<span class="badge">FDS/Feriado</span>':'<span class="badge">Dia útil</span>'}
-        <span class="badge code">${eur(s.shiftEur)}</span></h3>
-      ${allocs}${w}</div>`;
-  }).join('');
+  const dayNum=d=>parseISO(d).getDate();
+  const shiftLabel=s=>{
+    const multiDay=(s.endDate && s.endDate!==s.date);
+    const dates=multiDay?`${dayNum(s.date)}–${formatPT(s.endDate)}`:formatPT(s.date);
+    const hours=(s.start&&s.end)?`${s.start}–${s.end}`:'';
+    return `<b>${dates}</b><div class="small muted">${s.weekday}${hours?' · '+hours:''}</div>`+
+      (s.holiday?`<div class="small" style="color:#fecaca">${s.holiday}</div>`:'');
+  };
+  let body='';
+  shifts.forEach(s=>{
+    const days=(s.days||[]).filter(d=>d.allocations.some(a=>a.isER||a.isTN));
+    const rows=[];
+    days.forEach(d=>d.allocations.filter(a=>a.isER||a.isTN).forEach(a=>rows.push({d:d.date,a})));
+    if(!rows.length) return;
+    const span=rows.length+1;   // +1 para a linha de total do turno
+    rows.forEach((r,i)=>{
+      const a=r.a, cls=a.isTN?'tn':'er';
+      const first=(i===0);
+      const newDay=(i===0)||rows[i-1].d!==r.d;
+      body+=`<tr class="${first?'shiftstart':''}">`+
+        (first?`<td rowspan="${span}" class="shiftcell ${s.isFds?'fds':'weekday'}">${shiftLabel(s)}</td>`:'')+
+        `<td class="small">${newDay?formatPT(r.d):''}</td>
+         <td><span class="pill ${cls}">${a.code}</span></td>
+         <td class="small">${a.desc}${codeBadges(a)}${a.mult?` · <b>×${a.mult}</b>`:''}</td>
+         <td class="num"><b>${a.hours.toFixed(2)}</b></td>
+         <td class="num">${eur(a.eur)}</td></tr>`;
+    });
+    const totH=rows.reduce((t,r)=>t+r.a.hours,0);
+    body+=`<tr class="shifttotal"><td colspan="3" class="small">Total do turno</td>
+      <td class="num"><b>${totH.toFixed(2)}</b></td><td class="num"><b>${eur(s.shiftEur)}</b></td></tr>`;
+    if(s.warnings.length){
+      body+=`<tr><td colspan="5">${s.warnings.map(x=>`<div class="alert ${x.type}" style="margin:4px 0">${x.msg}</div>`).join('')}</td></tr>`;
+    }
+  });
+  area.innerHTML=`<table id="shiftsTable">
+    <thead><tr><th>Turno</th><th>Dia</th><th>Categoria</th><th>Descrição · coeficiente</th>
+      <th class="num">Horas</th><th class="num">Valor (€)</th></tr></thead>
+    <tbody>${body}</tbody></table>`;
 }
 function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
 function renderAnnual(result,dl119,dl119Projected){
@@ -1848,10 +1921,6 @@ function toast(msg,err){const t=document.createElement('div');t.textContent=msg;
   t.style.cssText=`position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:${err?'var(--err)':'var(--ok)'};color:#06283b;padding:10px 18px;border-radius:10px;font-weight:700;z-index:99`;
   document.body.appendChild(t);setTimeout(()=>t.remove(),1800);}
 function copyToClipboard(text,ok){navigator.clipboard.writeText(text).then(()=>toast(ok||'Copiado!'),()=>toast('Falha ao copiar.',true));}
-function shiftsToText(){if(!UI.lastResult)return '';const L=['Data\tDia\tInício\tFim\tTotalER\tTN\tValor(€)\tCategorias'];
-  UI.lastResult.shifts.filter(s=>s.isER).forEach(s=>{const c=s.allocations.map(a=>`${a.code}:${a.hours.toFixed(2)}`).join(' ');
-    L.push(`${formatPT(s.date)}\t${s.weekday}\t${s.start}\t${s.end}\t${(s.erDayH+s.erNightH).toFixed(2)}\t${s.tnH.toFixed(2)}\t${s.shiftEur.toFixed(2)}\t${c}`);});return L.join('\n');}
-function copyShifts(){copyToClipboard(shiftsToText(),'Detalhe copiado!');}
 
 /* ---- arranque ---- */
 const _savedState=loadSavedState();

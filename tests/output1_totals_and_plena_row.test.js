@@ -14,12 +14,14 @@ function calcFor(mode, regime){
   calculate();
 }
 
-// --- Linha TOTAL (base+extra) tem de existir e ser distinta da linha "extra" -- nos 3 modos ---
+// --- UMA linha de total, com Base, Extra e a soma em colunas proprias ---
 ['mensal','anual','variavel'].forEach(mode=>{
   calcFor(mode,'geral');
   const tf=document.querySelector('#summaryTable tfoot').innerHTML;
-  assertEqual(tf.includes('TOTAIS'), true, mode+': linha de totais de extra presente');
-  assertEqual(tf.includes('TOTAL'), true, mode+': linha TOTAL (base+extra) presente');
+  assertEqual(tf.includes('TOTAL · base + extra'), true, mode+': linha TOTAL presente');
+  assertEqual(tf.includes('Base '), true, mode+': o total mostra a componente Base');
+  assertEqual(tf.includes('Extra '), true, mode+': o total mostra a componente Extra');
+  assertEqual((tf.match(/TOTAL/g)||[]).length, 1, mode+': uma unica linha de total (nao duas)');
 });
 
 // --- Suplemento Dedicacao Plena: linha PROPRIA no corpo da tabela (RegHAcr. Ded.Plena),
@@ -42,5 +44,5 @@ calcFor('mensal','geral');
 tb=document.querySelector('#summaryTable tbody').innerHTML;
 assertEqual(tb.includes('RegHAcr. Ded.Plena'), false, 'Geral: sem linha de suplemento Plena');
 
-console.log('OK: Output 1 -- linha TOTAL (base+extra) e linha propria do suplemento Plena, nos 3 modos — '+CHECKS_RUN+' assercoes.');
+console.log('OK: Output 1 -- linha TOTAL unica (base/extra/soma) e linha propria do suplemento Plena — '+CHECKS_RUN+' assercoes.');
 `);

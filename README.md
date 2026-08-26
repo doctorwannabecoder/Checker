@@ -56,11 +56,17 @@ dia de descanso). Os dias fora do período contam só para a validação semanal
 
 ## Saídas
 
-- **Output 1 — Resumo por categoria de pagamento:** horas e valor por categoria,
-  com coluna €/hora e linha de total, para comparar com o recibo. Inclui o
-  suplemento de Dedicação Plena como linha própria quando aplicável.
-- **Output 2 — Detalhe individual por turno ER:** início/fim, total ER, TN
-  dentro do turno e repartição diurno/noturno por categoria.
+- **Output 1 — Resumo por categoria de pagamento:** uma linha por categoria com
+  horas, €/hora (o valor base da tabela SIM), **coeficiente** e valor — a linha
+  lê-se `Horas × €/hora × Coef. = Valor`. A descrição e a nota de cada categoria
+  partilham a mesma coluna. Fecha com **uma única linha de total**, que mostra
+  base, extra e a soma em colunas próprias. O suplemento de Dedicação Plena tem
+  linha própria quando aplicável.
+- **Output 2 — Horas por turno ER:** uma tabela onde a primeira coluna identifica
+  o turno (com **intervalo de datas** quando atravessa a meia-noite) e as linhas
+  seguintes repartem-no **por dia** e por categoria. Uma coluna comum mostra a
+  descrição e o coeficiente. Ex.: uma noite de 5–6 sem contrato por cumprir dá
+  `1ª hora` 1h e `seguintes` 3h no dia 5, e `seguintes` 8h no dia 6.
 - **Output 3 — Estimativa anual de rendimento**, incluindo subsídios de férias e
   de Natal proporcionais.
 
