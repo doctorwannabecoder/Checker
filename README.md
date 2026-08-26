@@ -57,16 +57,18 @@ dia de descanso). Os dias fora do período contam só para a validação semanal
 ## Saídas
 
 - **Output 1 — Resumo por categoria de pagamento:** uma linha por categoria com
-  horas, €/hora (o valor base da tabela SIM), **coeficiente** e valor — a linha
-  lê-se `Horas × €/hora × Coef. = Valor`. A descrição e a nota de cada categoria
-  partilham a mesma coluna. Fecha com **uma única linha de total**, que mostra
-  base, extra e a soma em colunas próprias. O suplemento de Dedicação Plena tem
-  linha própria quando aplicável.
-- **Output 2 — Horas por turno ER:** uma tabela onde a primeira coluna identifica
-  o turno (com **intervalo de datas** quando atravessa a meia-noite) e as linhas
-  seguintes repartem-no **por dia** e por categoria. Uma coluna comum mostra a
-  descrição e o coeficiente. Ex.: uma noite de 5–6 sem contrato por cumprir dá
-  `1ª hora` 1h e `seguintes` 3h no dia 5, e `seguintes` 8h no dia 6.
+  horas, **coeficiente** e €/hora (o valor base da tabela SIM) — a linha lê-se
+  `Horas × Coef. × €/hora = Valor`. A linha Base é um vencimento mensal, por isso
+  não mostra horas. Fecha com **uma única linha de total**, que mostra base, extra
+  e a soma em colunas próprias. O suplemento de Dedicação Plena tem linha própria
+  quando aplicável.
+- **Output 2 — Horas por turno ER:** a primeira coluna identifica o turno (com
+  **intervalo de datas** quando atravessa a meia-noite) e leva o total do turno;
+  as linhas repartem-no **por dia** — células agrupadas — e por categoria, pela
+  ordem TN → 1ª hora → seguintes. As descrições e coeficientes saem das linhas
+  para uma **legenda comum** por baixo da tabela. Ex.: uma noite de 5–6 sem
+  contrato por cumprir dá `1ª hora` 1h e `seguintes` 3h no dia 5, e `seguintes`
+  8h no dia 6.
 - **Output 3 — Estimativa anual de rendimento**, incluindo subsídios de férias e
   de Natal proporcionais.
 

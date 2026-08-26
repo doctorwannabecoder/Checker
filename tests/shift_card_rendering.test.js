@@ -34,11 +34,12 @@ assertClose(somaDias, shift.totalH, 0.01, 'soma das horas por dia = total do tur
 const somaEur=shift.days.reduce((t,d)=>t+d.allocations.reduce((x,a)=>x+a.eur,0),0);
 assertClose(somaEur, shift.shiftEur, 0.02, 'soma dos valores por dia = valor do turno');
 
-/* --- TN: com contrato por cumprir, parte da noite vira suplemento noturno,
+/* --- TN: com 9h de contrato por cumprir, as primeiras 9h da noite viram TN
+   (4h no dia 5 + 5h no dia 6) e as ultimas 3h sao ER (1ª hora + seguintes),
    e tambem tem de aparecer repartido por dia --- */
 const resTN=computeMonth([{date:'2026-05-05', inMonth:true, regularHours:0, er:true,
                            start:'20:00', end:'08:00', workType:'', bancoType:'noite'}],
-                         {dailyContractHours:8, weeklyContract:40, hourly:R,
+                         {dailyContractHours:9, weeklyContract:9, hourly:R,
                           initialDeficit:0, regime:'geral'});
 const sTN=resTN.shifts.find(s=>s.date==='2026-05-05');
 const allTN=sTN.days.reduce((a,d)=>a.concat(d.allocations),[]);
@@ -51,14 +52,25 @@ renderShifts(res.shifts.filter(s=>s.isER));
 const html=document.getElementById('shiftsArea').innerHTML;
 
 assertEqual(html.includes('<table id="shiftsTable"'), true, 'Output 2 e uma tabela');
-assertEqual(html.includes('Descrição · coeficiente'), true, 'coluna comum com descricao e coeficiente');
-assertEqual(html.includes('×2'), true, 'mostra o coeficiente na coluna comum');
-assertEqual(html.includes('rowspan'), true, 'a coluna do turno agrupa as linhas do turno');
-assertEqual(html.includes('Total do turno'), true, 'linha de total do turno');
+assertEqual(html.includes('catlegend'), true, 'descricoes numa legenda comum por baixo da tabela');
+assertEqual(html.includes('Descrição · coeficiente'), false, 'a descricao ja NAO e uma coluna das linhas');
+assertEqual(html.includes('×2'), true, 'a legenda mostra o coeficiente');
+assertEqual(html.includes('daycell'), true, 'linhas do mesmo dia agrupadas numa celula (rowspan)');
+assertEqual(html.includes('Total do turno'), false, 'linha "Total do turno" removida');
+assertEqual(html.includes('shifttot'), true, 'total do turno passa para a coluna que identifica o turno');
 assertEqual(html.includes('>Base<'), false, 'Output 2 nao mostra a categoria Base');
 assertEqual(html.includes('Copiar'), false, 'botao Copiar removido');
-// intervalo de datas num turno que atravessa a meia-noite
 assertEqual(html.includes('5–06/05/2026'), true, 'turno noturno mostra intervalo entre os 2 dias');
+
+/* --- ordem das linhas: TN, depois 1ª, depois Seg --- */
+renderShifts(resTN.shifts.filter(s=>s.isER));
+const htmlTN=document.getElementById('shiftsArea').innerHTML;
+const tbody=htmlTN.slice(htmlTN.indexOf('<tbody>'), htmlTN.indexOf('</tbody>'));
+const codes=tbody.split('<span class="pill ').slice(1).map(x=>x.slice(x.indexOf('>')+1, x.indexOf('<', x.indexOf('>'))));
+assertEqual(codes.length>0, true, 'ha categorias na tabela');
+assertEqual(codes[0].indexOf('TN')===0, true, 'TN aparece antes das categorias ER');
+const i1=codes.findIndex(c=>c.includes('1ª')), iS=codes.findIndex(c=>c.includes('Seg'));
+assertEqual(i1>-1 && iS>-1 && i1<iS, true, 'a 1ª hora aparece antes das seguintes');
 
 console.log('OK: Output 2 -- tabela de horas por turno, repartida por dia — '+CHECKS_RUN+' assercoes.');
 `);

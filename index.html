@@ -107,7 +107,11 @@
   #shiftsTable td.shiftcell.fds{border-left:4px solid var(--h24)}
   #shiftsTable td.shiftcell.weekday{border-left:4px solid var(--day)}
   #shiftsTable tr.shiftstart td{border-top:2px solid var(--line)}
-  #shiftsTable tr.shifttotal td{background:#0b1220;font-weight:700}
+  #shiftsTable td.daycell{vertical-align:middle;white-space:nowrap;color:var(--muted)}
+  #shiftsTable .shifttot{margin-top:6px;font-weight:700;font-size:12px;color:var(--accent2)}
+  .catlegend{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);
+    display:flex;gap:6px 18px;flex-wrap:wrap}
+  .catlegend .splitline{margin-top:0}
   .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .pill.er{background:var(--day);color:#06283b}
@@ -273,7 +277,7 @@
     <div style="overflow-x:auto">
       <table id="summaryTable">
         <thead><tr><th>Categoria</th><th>Descrição / Tipo</th><th class="num">Horas</th>
-          <th class="num">€/hora</th><th class="num">Coef.</th><th class="num">Valor (€)</th></tr></thead>
+          <th class="num">Coef.</th><th class="num">€/hora</th><th class="num">Valor (€)</th></tr></thead>
         <tbody></tbody><tfoot></tfoot>
       </table>
     </div>
@@ -1722,16 +1726,18 @@ function renderSummary(summary,result,dl119){
     const rate=isBase?hourlyBase:(isPlenaSup?null:(r.mult?hourlyExtra:null));
     const showRate=(rate!=null)?eur(rate):'—';
     const showCoef=(r.mult&&!isBase&&!isPlenaSup)?`×${r.mult}`:'—';
-    const baseNote = (pb.subJune>0||pb.subDec>0)
-      ? `Vencimento base · ${pb.n} ${pb.n===1?'mês':'meses'} + subsídios (férias/Natal)`
-      : `Vencimento base · ${pb.n} ${pb.n===1?'mês':'meses'} do período`;
-    const note=isBase?baseNote:(isPlenaSup?'Regime de Dedicação Plena (25% sobre o vencimento base, pago 14×/ano)':(r.isTN?'Suplemento noturno (horas de contrato à noite)':(r.isER?'Trabalho extraordinário':(r.key==='PREV'?'Prevenção':'—'))));
+    // A descrição da categoria já se explica sozinha — ficam só as notas que
+    // acrescentam mesmo alguma coisa.
+    const note=isPlenaSup?'Regime de Dedicação Plena (25% sobre o vencimento base, pago 14×/ano)'
+      :(r.isTN?'Suplemento noturno (horas de contrato à noite)':'');
+    // A linha Base é um vencimento mensal, não horas — mostrar horas ali só confunde.
+    const showHours=(isBase||isPlenaSup)?'—':r.hours.toFixed(2);
     return `<tr>
       <td><span class="badge code">${r.code}</span></td>
-      <td>${r.desc}${codeBadges(r)}<div class="small muted">${note}</div></td>
-      <td class="num">${r.hours.toFixed(2)}</td>
-      <td class="num small">${showRate}</td>
+      <td>${r.desc}${codeBadges(r)}${note?`<div class="small muted">${note}</div>`:''}</td>
+      <td class="num">${showHours}</td>
       <td class="num small">${showCoef}</td>
+      <td class="num small">${showRate}</td>
       <td class="num">${showVal}</td></tr>`;
   }).join('');
 
@@ -1745,8 +1751,8 @@ function renderSummary(summary,result,dl119){
       <td><span class="badge code">DL119</span></td>
       <td>Requalificação a 1× (Art.4º/6, substitui o multiplicador ER normal)<div class="small muted">Horas do(s) bloco(s) DL119 abaixo</div></td>
       <td class="num">${dl119.requalifiedHours.toFixed(2)}</td>
-      <td class="num small">${eur(hourlyExtra)}</td>
       <td class="num small">×1</td>
+      <td class="num small">${eur(hourlyExtra)}</td>
       <td class="num">${eur(dl119.requalifiedEurAt1x)}</td></tr>`;
     const clawRow=`<tr>
       <td><span class="badge code">DL119</span></td>
@@ -1784,51 +1790,60 @@ function renderSummary(summary,result,dl119){
     <td class="num small">Extra ${eur(totalExtra)}</td>
     <td class="num">${eur(totalEur)} bruto</td></tr>`;
 }
-/* Output 2 — uma tabela: 1ª coluna identifica o turno (com intervalo de datas
-   quando atravessa a meia-noite), depois uma linha por DIA × categoria. A
-   descrição e o coeficiente ficam numa coluna comum a todas as entradas. */
+/* Output 2 — uma tabela enxuta: a 1ª coluna identifica o turno (intervalo de
+   datas quando atravessa a meia-noite) e leva o total do turno; as linhas
+   repartem-no por DIA (células agrupadas) e por categoria. A descrição de cada
+   categoria sai das linhas para uma legenda comum por baixo da tabela. */
 function renderShifts(shifts){
   document.getElementById('shiftsCard').style.display='block';
   const area=document.getElementById('shiftsArea');
   if(!shifts.length){area.innerHTML=`<div class="muted">Nenhum turno ER no período.</div>`;return;}
   const dayNum=d=>parseISO(d).getDate();
-  const shiftLabel=s=>{
+  // Ordem pedida: TN primeiro, depois a 1ª hora, depois as seguintes.
+  const rank=a=> a.isTN?0:(/_1$/.test(a.key)?1:2);
+  const byRank=(a,b)=> (rank(a)-rank(b)) || String(a.code).localeCompare(String(b.code));
+  const shiftLabel=(s,totH)=>{
     const multiDay=(s.endDate && s.endDate!==s.date);
     const dates=multiDay?`${dayNum(s.date)}–${formatPT(s.endDate)}`:formatPT(s.date);
     const hours=(s.start&&s.end)?`${s.start}–${s.end}`:'';
     return `<b>${dates}</b><div class="small muted">${s.weekday}${hours?' · '+hours:''}</div>`+
-      (s.holiday?`<div class="small" style="color:#fecaca">${s.holiday}</div>`:'');
+      (s.holiday?`<div class="small" style="color:#fecaca">${s.holiday}</div>`:'')+
+      `<div class="shifttot">${totH.toFixed(2)} h · ${eur(s.shiftEur)}</div>`;
   };
+  const legend={};
   let body='';
   shifts.forEach(s=>{
-    const days=(s.days||[]).filter(d=>d.allocations.some(a=>a.isER||a.isTN));
-    const rows=[];
-    days.forEach(d=>d.allocations.filter(a=>a.isER||a.isTN).forEach(a=>rows.push({d:d.date,a})));
-    if(!rows.length) return;
-    const span=rows.length+1;   // +1 para a linha de total do turno
-    rows.forEach((r,i)=>{
-      const a=r.a, cls=a.isTN?'tn':'er';
-      const first=(i===0);
-      const newDay=(i===0)||rows[i-1].d!==r.d;
-      body+=`<tr class="${first?'shiftstart':''}">`+
-        (first?`<td rowspan="${span}" class="shiftcell ${s.isFds?'fds':'weekday'}">${shiftLabel(s)}</td>`:'')+
-        `<td class="small">${newDay?formatPT(r.d):''}</td>
-         <td><span class="pill ${cls}">${a.code}</span></td>
-         <td class="small">${a.desc}${codeBadges(a)}${a.mult?` · <b>×${a.mult}</b>`:''}</td>
-         <td class="num"><b>${a.hours.toFixed(2)}</b></td>
-         <td class="num">${eur(a.eur)}</td></tr>`;
+    const dayList=(s.days||[])
+      .map(d=>({date:d.date, allocs:d.allocations.filter(a=>a.isER||a.isTN).sort(byRank)}))
+      .filter(d=>d.allocs.length);
+    const nRows=dayList.reduce((t,d)=>t+d.allocs.length,0);
+    if(!nRows) return;
+    const totH=dayList.reduce((t,d)=>t+d.allocs.reduce((x,a)=>x+a.hours,0),0);
+    let first=true;
+    dayList.forEach(d=>{
+      d.allocs.forEach((a,i)=>{
+        legend[a.key]=a;
+        body+=`<tr class="${first?'shiftstart':''}">`+
+          (first?`<td rowspan="${nRows}" class="shiftcell ${s.isFds?'fds':'weekday'}">${shiftLabel(s,totH)}</td>`:'')+
+          (i===0?`<td rowspan="${d.allocs.length}" class="small daycell">${formatPT(d.date)}</td>`:'')+
+          `<td><span class="pill ${a.isTN?'tn':'er'}">${a.code}</span></td>
+           <td class="num"><b>${a.hours.toFixed(2)}</b></td>
+           <td class="num">${eur(a.eur)}</td></tr>`;
+        first=false;
+      });
     });
-    const totH=rows.reduce((t,r)=>t+r.a.hours,0);
-    body+=`<tr class="shifttotal"><td colspan="3" class="small">Total do turno</td>
-      <td class="num"><b>${totH.toFixed(2)}</b></td><td class="num"><b>${eur(s.shiftEur)}</b></td></tr>`;
     if(s.warnings.length){
       body+=`<tr><td colspan="5">${s.warnings.map(x=>`<div class="alert ${x.type}" style="margin:4px 0">${x.msg}</div>`).join('')}</td></tr>`;
     }
   });
+  const legendHtml=Object.values(legend).sort(byRank).map(a=>
+    `<span class="splitline"><span class="pill ${a.isTN?'tn':'er'}">${a.code}</span>
+      <span class="small">${a.desc}${codeBadges(a)}${a.mult?` · <b>×${a.mult}</b>`:''}</span></span>`).join('');
   area.innerHTML=`<table id="shiftsTable">
-    <thead><tr><th>Turno</th><th>Dia</th><th>Categoria</th><th>Descrição · coeficiente</th>
+    <thead><tr><th>Turno</th><th>Dia</th><th>Categoria</th>
       <th class="num">Horas</th><th class="num">Valor (€)</th></tr></thead>
-    <tbody>${body}</tbody></table>`;
+    <tbody>${body}</tbody></table>
+    <div class="catlegend">${legendHtml}</div>`;
 }
 function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
 function renderAnnual(result,dl119,dl119Projected){
