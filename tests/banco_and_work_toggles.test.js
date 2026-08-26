@@ -49,7 +49,14 @@ const wtIdx=html.indexOf('work-toggles');
 const wtEnd=html.indexOf('</div>', wtIdx);
 const wtSnippet=html.slice(wtIdx, wtEnd);
 const btnCount=(wtSnippet.match(/class="work-btn/g)||[]).length;
-assertEqual(btnCount, 5, 'work-toggles: 5 botoes por dia (rotina/tarde/alternativo/folga/bolsa)');
+assertEqual(btnCount, 4, 'work-toggles (dia util): 4 botoes (rotina/tarde/folga/bolsa)');
+assertEqual(!wtSnippet.includes('data-k="extra"'), true, 'work-toggles (dia util): Alternativo NAO aparece');
+
+// Fim de semana: o trabalho normal so oferece A (Alternativo).
+const satIdx=html.indexOf('data-d="2026-05-02"');
+const satWork=html.slice(satIdx, html.indexOf('</div>', satIdx));
+assertEqual((satWork.match(/class="work-btn/g)||[]).length, 1, 'work-toggles (fim de semana): 1 botao');
+assertEqual(satWork.includes('data-k="extra"'), true, 'work-toggles (fim de semana): so Alternativo');
 
 target.work='folga'; renderManualCalendar();
 html=document.getElementById('manualCal').innerHTML;

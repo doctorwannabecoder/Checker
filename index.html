@@ -139,6 +139,7 @@
   .work-btn.active{background:var(--accent2);border-color:var(--accent2);color:#06283b}
   .banco-btn.banco-d.active{background:var(--day);border-color:var(--day);color:#06283b}
   .banco-btn.banco-n.active{background:var(--night);border-color:var(--night);color:#fff}
+  .banco-btn.banco-p.active{background:var(--prev);border-color:var(--prev);color:#06283b}
   .work-btn:hover,.banco-btn:hover{border-color:var(--accent2)}
   .mcal td.weeksum{background:#0b1220;font-size:11px;line-height:1.6;vertical-align:middle}
   .mcal td.weeksum b{color:var(--text)}
@@ -235,8 +236,9 @@
   <!-- 4 · entrada -->
   <div class="card">
     <h2>4 · Entrada</h2>
-    <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> (R Rotina · T Tarde · A Alternativo · F Folga · BH Bolsa de Horas) e
-      <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
+    <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> — nos dias úteis R Rotina · T Tarde · F Folga · BH Bolsa de Horas,
+      ao fim de semana apenas A Alternativo — e <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h; ao fim de semana
+      também P Prevenção 20:00–08:00, exclusiva de D/N). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
       dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de
       <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
     <div id="manualCal" style="overflow-x:auto"></div>
@@ -343,6 +345,9 @@ const PAYROLL_RULES = {
   saturdaySplitHour: { hour: 13, confirm:false },
   // "1ª hora": duração (min) que bilha sob o código "1ª"; o resto do turno bilha sob "seguintes".
   firstHourMinutes: { minutes: 60, confirm:false },
+  // Prevenção: paga a METADE do valor/hora do próprio turno (mesmos
+  // multiplicadores SIM do turno que cobriria essas horas, × 0,5).
+  preventionFactor: { pct: 0.5, confirm:false },
 
   /* CATEGORIAS DE PAGAMENTO — key -> {code, desc, isER, isTN, confirm}
      `code` = etiqueta curta (mostrada na coluna "Categoria"); `desc` = descrição completa. */
@@ -692,6 +697,20 @@ function computeEntry(entry, ctx, contractRem){
     Object.values(cls.contractDayMin).forEach(mins=>{ contractDayH+=mins/60; });
   } else if(entry.er && durMin>0){
     warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir contrato/extraordinário e diurno/noturno.`});
+  } else if(entry.prevention && durMin>0 && startMin!=null){
+    // Prevenção paga a metade do valor/hora do turno que cobriria estas horas:
+    // reutiliza a classificação por minuto (categoria × diurno/noturno × 1ª/seg)
+    // e aplica-lhe PAYROLL_RULES.preventionFactor. Não consome contrato nem
+    // gera TN — não é trabalho efetivo, é disponibilidade.
+    const pf=PAYROLL_RULES.preventionFactor.pct;
+    const clsPrev=classifyErShift(date,startMin,durMin,0);
+    let prevEur=0;
+    Object.entries(clsPrev.erMin).forEach(([k,mins])=>{
+      const [cat,seg,order]=k.split('|');
+      const mult=(ER_MULTIPLIER[cat] && ER_MULTIPLIER[cat][seg])?ER_MULTIPLIER[cat][seg][order]:0;
+      prevEur += (mins/60)*hourly*mult*pf;
+    });
+    addAlloc(allocMap,'PREV', totalH, prevEur, {mult:pf});
   } else if(entry.prevention && durMin>0){
     addAlloc(allocMap,'PREV', totalH, 0, {});
   }
@@ -1156,6 +1175,14 @@ function priorAnchorMonth(){
 }
 function priorAnchorLabel(){ const {y,m}=priorAnchorMonth(); return `${MONTHS_PT[m-1]} de ${y}`; }
 
+/* Dias de fim de semana (sábado/domingo reais, mesmo que sejam feriado). */
+function isWeekendDate(dateISO){ const d=parseISO(dateISO).getDay(); return d===0||d===6; }
+/* Que tipos de trabalho normal são oferecidos/aceites em cada dia:
+   dias úteis -> R/T/F/BH ; fins de semana -> só A (Alternativo). */
+const WEEKDAY_WORK=['rotina','tarde','folga','bolsa'];
+const WEEKEND_WORK=['extra'];
+function allowedWorkTypes(dateISO){ return isWeekendDate(dateISO)?WEEKEND_WORK:WEEKDAY_WORK; }
+
 /* Tipos de trabalho normal (consomem o contrato semanal, pagos pela base). */
 const WORK_TYPES = {
   rotina: {label:'Rotina', hours:()=>rotinaHours()},
@@ -1358,18 +1385,25 @@ function renderManualCalendar(){
   // Trabalho normal: tick único (só um tipo por dia) — à semelhança do banco.
   const WORK_TOGGLE_LABELS={rotina:'R',tarde:'T',extra:'A',folga:'F',bolsa:'BH'};
   const workToggles=(date,sel)=>{
-    const btns=Object.entries(WORK_TYPES).map(([k,v])=>
-      `<button type="button" class="work-btn${sel===k?' active':''}" data-k="${k}" title="${v.label} (${v.hours()}h)">${WORK_TOGGLE_LABELS[k]}</button>`).join('');
+    const btns=allowedWorkTypes(date).map(k=>{
+      const v=WORK_TYPES[k];
+      return `<button type="button" class="work-btn${sel===k?' active':''}" data-k="${k}" title="${v.label} (${v.hours()}h)">${WORK_TOGGLE_LABELS[k]}</button>`;
+    }).join('');
     return `<div class="work-toggles" data-d="${date}">${btns}</div>`;
   };
   // Banco: D/N como ticks independentes (à semelhança do simulador DL119) em
   // vez de droplist — D+N ativos em simultâneo = Banco 24h.
-  const bancoToggles=(date,sel)=>{
+  const bancoToggles=(date,sel,prev)=>{
     const isD=(sel==='dia'||sel==='h24'), isN=(sel==='noite'||sel==='h24');
+    // Prevenção só existe ao fim de semana; exclusiva de D/N (o motor indexa
+    // as entradas por data, por isso um dia só pode gerar uma entrada).
+    const pBtn=isWeekendDate(date)
+      ? `<button type="button" class="banco-btn banco-p${prev?' active':''}" data-t="p" title="Prevenção (20:00–08:00)">P</button>`
+      : '';
     return `<div class="banco-toggles" data-d="${date}">
       <button type="button" class="banco-btn banco-d${isD?' active':''}" data-t="d" title="Banco Dia (08:00–20:00)">D</button>
       <button type="button" class="banco-btn banco-n${isN?' active':''}" data-t="n" title="Banco Noite (20:00–08:00)">N</button>
-    </div>`;
+      ${pBtn}</div>`;
   };
   const legendTd=`<td class="legend"><div class="legend-row">Dia</div><div class="legend-row">Trab.</div><div class="legend-row">Urgência</div></td>`;
 
@@ -1411,7 +1445,7 @@ function renderManualCalendar(){
           tds+=`<td class="${cls}" title="${kind==='holiday'?holidayName(date):''}">
             <div class="dnum">${parseISO(date).getDate()}${kind==='holiday'?' 🎌':''}</div>
             ${workToggles(date,row.work)}
-            ${bancoToggles(date,row.banco)}</td>`;
+            ${bancoToggles(date,row.banco,row.prev)}</td>`;
         }
         dd=addDays(dd,1);
       }
@@ -1432,10 +1466,12 @@ function renderManualCalendar(){
   host.querySelectorAll('.banco-btn').forEach(btn=>btn.addEventListener('click',e=>{
     const wrap=btn.parentElement, date=wrap.dataset.d, type=btn.dataset.t;
     const row=UI.rowByDate[date]; if(!row) return;
+    if(type==='p'){ row.prev=!row.prev; if(row.prev) row.banco=''; renderManualCalendar(); return; }
     const isD=(row.banco==='dia'||row.banco==='h24'), isN=(row.banco==='noite'||row.banco==='h24');
     const newD = type==='d' ? !isD : isD, newN = type==='n' ? !isN : isN;
     const turnedOnNight = (type==='n' && newN && !isN);
     row.banco = newD&&newN ? 'h24' : newD ? 'dia' : newN ? 'noite' : '';
+    if(row.banco) row.prev=false;   // P é exclusiva de D/N
     // Dedicação Plena: Urgência N implica descanso no dia seguinte -> muda
     // automaticamente para Bolsa de Horas (evita o aviso manual anterior).
     if(turnedOnNight && currentRegime()==='plena'){
@@ -1454,7 +1490,7 @@ function renderManualCalendar(){
    workType/bancoType identificam o tick escolhido (ex.: 'rotina', 'noite') —
    usados nas validações por regime. */
 function collectEntries(){
-  return UI.manualRows.filter(r=>r.work||r.banco)
+  return UI.manualRows.filter(r=>r.work||r.banco||r.prev)
     .map(r=>{
       // Urgência D (08:00–20:00) ou 24h sobrepõe-se ao horário diurno normal
       // -> ignora o trabalho normal desse dia (evita duplicar horas).
@@ -1463,14 +1499,20 @@ function collectEntries(){
       // OU domingo, mesmo que seja feriado) -- ignorados silenciosamente,
       // tal como a Urgência D acima. Folga continua válida (dia de descanso
       // explícito). Alternativo fica sem regra por agora (a decidir depois).
-      const dow=parseISO(r.date).getDay();
-      const isWeekendDay=(dow===0||dow===6);
-      const ignoresFromWeekend = isWeekendDay && (r.work==='rotina'||r.work==='tarde'||r.work==='bolsa');
-      const effectiveWork = (ignoresFromBanco||ignoresFromWeekend) ? '' : (r.work||'');
+      // Cada dia só aceita os tipos oferecidos pela UI para esse dia
+      // (úteis: R/T/F/BH · fim de semana: A). Um valor fora disso — vindo de
+      // estado guardado antes desta regra — é ignorado silenciosamente.
+      const allowedWork = allowedWorkTypes(r.date).includes(r.work);
+      const effectiveWork = (ignoresFromBanco||!allowedWork) ? '' : (r.work||'');
       const regularHours = effectiveWork ? workHoursOf(effectiveWork) : 0;
       const b=BANCO_TYPES[r.banco];
+      // Prevenção: só ao fim de semana e só quando não há turno de banco nesse
+      // dia. Ocupa a janela da noite (20:00–08:00).
+      const isPrev = !!r.prev && !b && isWeekendDate(r.date);
+      const pv = isPrev ? BANCO_TYPES.noite : null;
       return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
-              er:!!b, start:b?b.start:'', end:b?b.end:'', prevention:false,
+              er:!!b, prevention:isPrev,
+              start:b?b.start:(pv?pv.start:''), end:b?b.end:(pv?pv.end:''),
               workType:effectiveWork, bancoType:r.banco||''};
     });
 }

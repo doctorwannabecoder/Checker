@@ -14,9 +14,9 @@ buildCalendar();
 assertEqual(UI.rowByDate['2026-05-02'].work, '', 'Sabado: sem prefill automatico');
 assertEqual(UI.rowByDate['2026-05-03'].work, '', 'Domingo: sem prefill automatico');
 
-// Rotina, Tarde e Bolsa de Horas colocados manualmente num fim de semana sao
-// IGNORADOS no calculo (zero horas) -- Alternativo (A) fica por agora sem
-// regra (deliberado); Folga continua valida (8h fixas, e um dia de descanso).
+// Ao fim de semana o unico tipo de trabalho normal aceite e Alternativo (A);
+// tudo o resto -- Rotina, Tarde, Bolsa de Horas e tambem Folga -- e IGNORADO
+// no calculo (zero horas), mesmo que tenha ficado em estado guardado antigo.
 const sat=UI.rowByDate['2026-05-02'];
 function checkIgnored(key, shouldBeIgnored, label){
   sat.work=key;
@@ -28,7 +28,7 @@ checkIgnored('rotina', true, 'Sabado com Rotina: ignorado (0h)');
 checkIgnored('tarde', true, 'Sabado com Tarde: ignorado (0h)');
 checkIgnored('bolsa', true, 'Sabado com Bolsa de Horas: ignorado (0h)');
 checkIgnored('extra', false, 'Sabado com Alternativo: NAO ignorado (sem regra ainda)');
-checkIgnored('folga', false, 'Sabado com Folga: NAO ignorado (dia de descanso valido, 8h fixas)');
+checkIgnored('folga', true, 'Sabado com Folga: ignorado (fim de semana so aceita A)');
 
 // Dia util normal (Segunda) nunca e ignorado
 const mon=UI.rowByDate['2026-05-04'];
@@ -36,5 +36,5 @@ mon.work='rotina';
 const eMon=collectEntries().find(x=>x.date==='2026-05-04');
 assertEqual(eMon.regularHours, 7, 'Segunda (dia util) com Rotina: NAO ignorado, conta as 7h');
 
-console.log('OK: prefill de fim de semana/feriado + ignorar R/T/BH ao fim de semana (A e F continuam validos) — '+CHECKS_RUN+' assercoes.');
+console.log('OK: prefill de fim de semana/feriado + fim de semana so aceita A (R/T/BH/F ignorados) — '+CHECKS_RUN+' assercoes.');
 `);
