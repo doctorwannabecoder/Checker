@@ -21,8 +21,13 @@ A aplicação está organizada em quatro pontos:
 3. **Ponto 3 · Incentivo excecional DL 119/2026** — opcional, ligado por
    interruptor. Só aparece o resto do ponto quando está ativo.
 4. **Ponto 4 · Entrada** — inserção manual num **calendário** (semanas na
-   horizontal, Segunda a Domingo). Cada dia recebe um tipo: `Rotina`, `Tarde`,
-   `Alternativo`, `Bolsa de Horas`, `Folga`, `Prevenção` ou turno de `Urgência`.
+   horizontal, Segunda a Domingo). Cada dia tem duas linhas:
+   - **Trabalho normal**, com as opções que se aplicam ao dia: nos dias úteis
+     `R` Rotina · `T` Tarde · `F` Folga · `BH` Bolsa de Horas; ao fim de semana
+     apenas `A` Alternativo.
+   - **Urgência**: `D` Dia (08:00–20:00) · `N` Noite (20:00–08:00) · `D+N` = 24h.
+     Ao fim de semana junta-se `P` **Prevenção** (20:00–08:00), que acumula com
+     `D` — são janelas distintas — mas não com `N` nem com 24h.
 
 Depois, **Calcular pagamento**.
 
@@ -83,7 +88,7 @@ daqui, nada está hard-coded noutro sítio:
 
 | Objeto | Contém |
 |--------|--------|
-| `PAYROLL_RULES` | janela de TN (20:00–08:00), corte de Sábado (13:00), duração da «1ª hora» (60 min) e as categorias de pagamento |
+| `PAYROLL_RULES` | janela de TN (20:00–08:00), corte de Sábado (13:00), duração da «1ª hora» (60 min), janela e fator da Prevenção, e as categorias de pagamento |
 | `CODE_MATRIX` / `TN_MATRIX` | que categoria se aplica a cada caso (dia útil/Sáb/Dom/feriado × diurno/noturno × 1ª/seguintes) |
 | `SHIFT_CODE_MAP` | significado dos códigos da escala-base (`worked` e, para turnos, `start`/`end`) |
 
