@@ -4,121 +4,111 @@
 
 Ferramenta autónoma (um único ficheiro `index.html`) para o trabalhador
 **conferir se as horas de ER (Escala de Recurso) e TN (Trabalho Noturno)
-foram corretamente pagas** num determinado mês.
+foram corretamente pagas** num determinado período.
 
-Corre 100% no navegador — sem servidor, sem base de dados, sem login.
-Basta abrir o `index.html`.
+Corre 100% no navegador — sem servidor, sem base de dados, sem login, sem
+instalação. Basta abrir o `index.html`.
 
 ## Como usar
 
-1. Abrir `index.html` (duplo-clique) ou publicar via **GitHub Pages**
-   (Settings → Pages → branch `main`) e abrir o link.
-2. Escolher **mês/ano** e o **tempo de trabalho semanal contratado** (30–45 h).
-3. Inserir o plano mensal. **Forma recomendada — importar o PDF:**
-   - Clicar **📄 Escolher PDF…** e selecionar o horário (PDF do SISQUAL/PDFsharp).
-   - A app lê **automaticamente**: o mês, a **legenda** (código → janela/horas),
-     e as **3 secções** — `Rotina` (trabalho regular), `Urgência Externa` (ER) e
-     `Prevenção`. Escolhe-se o **nome** numa lista e a grelha é preenchida.
-   - Só funciona com PDFs de **texto** (não digitalizações). Nada é enviado para
-     fora — a leitura é 100% no navegador.
+A aplicação está organizada em quatro pontos:
 
-   **Em alternativa — colar (3 partes)** (secção recolhível): três caixas
-   coladas uma a uma — Parte 1 = escala-base (`nome + 1 código/dia`, 1.º código =
-   último dia do mês anterior), Parte 2 = ER, Parte 3 = prevenções. Ou
-   **inserção manual** por dia.
-4. **Verificar/corrigir a grelha** (cada dia já alinhado) e ajustar o que faltar.
-5. Clicar **Calcular pagamento**.
+1. **Ponto 1 · Contrato** — categoria profissional (Assistente, Assistente
+   Graduado, Assistente Graduado Sénior, Internato Médico Anos 1-3 e Anos 4-6),
+   regime e tempo de trabalho semanal. Daqui saem os valores/hora da tabela SIM.
+2. **Ponto 2 · Período** — modo de período (ver abaixo), mais o défice de horas
+   transitado.
+3. **Ponto 3 · Incentivo excecional DL 119/2026** — opcional, ligado por
+   interruptor. Só aparece o resto do ponto quando está ativo.
+4. **Ponto 4 · Entrada** — inserção manual num **calendário** (semanas na
+   horizontal, Segunda a Domingo). Cada dia recebe um tipo: `Rotina`, `Tarde`,
+   `Alternativo`, `Bolsa de Horas`, `Folga`, `Prevenção` ou turno de `Urgência`.
 
-### O problema dos espaços em branco (Partes 2/3)
+Depois, **Calcular pagamento**.
 
-Como o plano vem de **texto/PDF (só espaços, sem tabulações)**, as Partes 2/3
-têm dias em branco e **não alinham por posição**. Solução adotada:
+### Modos de período
 
-> **Prefixe cada entrada com o número do dia**, ex.: `3 20:00-08:00` ou
-> `12 24h`. Assim o alinhamento é exato, independentemente dos brancos.
-
-A Parte 1 (que tem um código para *todos* os dias) serve de “régua” e tudo
-acaba numa **grelha editável** onde pode corrigir manualmente antes de calcular.
+- **Mensal** — um mês, mais os dias das semanas de fronteira nas duas pontas.
+- **Anual** — ano civil completo (Jan–Dez). Pré-preenche todos os dias como
+  Rotina e esconde o Output 2 (impraticável para um ano inteiro).
+- **Variável** — vários meses consecutivos do mesmo ano.
 
 ### Semana completa
 
 Para os cálculos semanais de ER/TN, a app **estende cada semana de fronteira**
-do mês a Seg–Dom. Dias úteis sem turno/folga são pré-preenchidos como
-**Trabalho Regular (RW)**. Os dias fora do mês contam só para a validação
-semanal — não entram no resumo mensal.
+do período a Seg–Dom. Dias úteis sem turno ou descanso são pré-preenchidos como
+Rotina; feriados em dia útil como Folga; fins de semana ficam em branco (já são
+dia de descanso). Os dias fora do período contam só para a validação semanal.
 
-### Saídas
+## Saídas
 
-- **Output 1 — Resumo mensal por código de pagamento:** horas pagas por
-  código, com horas ER e TN associadas, para comparar com o recibo.
-- **Output 2 — Detalhe por turno ER:** cada turno mostra início/fim, total
-  ER, TN dentro do turno, repartição diurno/noturno e por código de pagamento.
+- **Output 1 — Resumo por categoria de pagamento:** horas e valor por categoria,
+  com coluna €/hora e linha de total, para comparar com o recibo. Inclui o
+  suplemento de Dedicação Plena como linha própria quando aplicável.
+- **Output 2 — Detalhe individual por turno ER:** início/fim, total ER, TN
+  dentro do turno e repartição diurno/noturno por categoria.
+- **Output 3 — Estimativa anual de rendimento**, incluindo subsídios de férias e
+  de Natal proporcionais.
 
-Botões para **copiar**, exportar **CSV** e **imprimir**.
+## Categorias por nome, não por número de código
 
-## ⚠️ Regras de pagamento — precisam de confirmação
+Esta ferramenta **não usa os números de código do recibo** (700.001, 211.001,
+etc.). Cada categoria de pagamento tem apenas um **nome** — por exemplo
+`DU · Diu · 1ª hora` — que chega para fazer a correspondência visual com o
+recibo pelas horas e pelo valor. Evita ter de manter um mapa de números de
+código sempre atualizado.
 
-O projeto de origem (gerador de escalas) **não define códigos nem regras de
-pagamento**. Por isso, todas as regras salariais estão reunidas num único
-objeto editável, `PAYROLL_RULES`, no topo do `<script>` em `index.html`, e
-estão assinaladas na interface como **«Precisa de confirmação»**.
+## DL 119/2026 — incentivo excecional
 
-### Códigos de pagamento
+Quando ligado, o Ponto 3 avalia as horas ER acima do limite legal anual
+(**250h** em Dedicação Plena, **150h** nos restantes regimes) e paga-as em
+**blocos de 48h**, com requalificação, estorno de ER e incentivo por bloco
+integrados diretamente nas linhas do Output 1 — o total do Output 1 é a figura
+equivalente ao recibo.
 
-**Fornecidos e confirmados** (em `PAYROLL_RULES.codes`):
+Se o período inserido não cobrir o ano todo, indique as **horas ER já feitas até
+ao final do mês anterior**, para o limite anual ser avaliado corretamente.
 
-| Código | Significado |
-|--------|-------------|
-| `101.001` | **Remuneração base** (trabalho regular contratado / RW) |
-| `700.001` | ER · dia útil · diurno · **1ª hora** |
-| `700.002` | ER · dia útil · diurno · **horas seguintes** |
-| `700.003` | ER · dia útil · **noturno · 1ª hora** |
-| `700.004` | ER · dia útil · **noturno · seguintes** |
-| `700.006` | ER · **Sáb > 13h (DDC)** · diurno · seguintes |
-| `700.009` | ER · **Domingo (DDS)** · diurno · 1ª hora |
-| `700.010` | ER · Domingo (DDS) · diurno · seguintes |
-| `211.001` | **TN** · dia útil · noturno *(sigla `OE` por confirmar)* |
+Dois pontos dependem da sua situação e aparecem marcados com **«confirmar»**:
 
-Regra **1ª / Seguintes**: a **1ª hora** de cada turno ER bilha sob o código
-`…1ª`; as restantes horas sob o código `…Seg`. (`firstHourMinutes = 60`.)
+- se esta escala é o **último bloco autorizado** do ano civil (pagamento
+  proporcional das horas restantes abaixo de 48h — Art.4º/4);
+- se houve pelo menos **48h de banco ao fim de semana nas últimas 8 semanas**
+  (condição de majoração, Art.5º).
 
-**Em falta** (a app calcula e marca a vermelho **«EM FALTA»** — falta o número
-do código real): ER **Sábado 1ª hora**, ER **Sábado noturno**, ER **Domingo
-noturno**, **todos** os de **feriado**, TN de Sáb/Dom/feriado, e o código de
-**Prevenção**.
+## Onde ficam as regras
 
-**Suposições** a confirmar com o RH / acordo coletivo:
+Tudo no topo do `<script>` em `index.html` — a UI e o motor de cálculo leem
+daqui, nada está hard-coded noutro sítio:
 
-| Regra | Suposição atual |
-|-------|-----------------|
-| Janela legal de Trabalho Noturno (TN) | 22:00 – 07:00 |
-| Sábado conta como DDC a partir de | 13:00 |
-| Janela diurna de referência | 08:00 – 20:00 (reutilizada do gerador) |
-| Base diária (RW) | horas semanais ÷ 5 |
-| Tetos (validação) | 24 h/dia, 48 h/semana |
-| Significado dos códigos de escala | `D`=descanso, `F`=folga, `Fr`=férias; `M256`/`T13`/`Bc`/`Cgs` por confirmar |
+| Objeto | Contém |
+|--------|--------|
+| `PAYROLL_RULES` | janela de TN (20:00–08:00), corte de Sábado (13:00), duração da «1ª hora» (60 min) e as categorias de pagamento |
+| `CODE_MATRIX` / `TN_MATRIX` | que categoria se aplica a cada caso (dia útil/Sáb/Dom/feriado × diurno/noturno × 1ª/seguintes) |
+| `SHIFT_CODE_MAP` | significado dos códigos da escala-base (`worked` e, para turnos, `start`/`end`) |
 
-## Como atualizar os códigos / regras
+As regras de pagamento estão **confirmadas** contra a tabela SIM. Uma entrada com
+`confirm:true` passa a mostrar um badge amarelo na UI — use isso ao introduzir
+qualquer regra ainda por validar.
 
-Editar **apenas** o topo do `<script>` em `index.html`:
+## Testes
 
-- **Códigos do recibo** → `PAYROLL_RULES.codes`: corrija `code`, e ponha
-  `missing:false` / `confirm:false` à medida que confirma.
-- **Que código se aplica a cada caso** (dia útil/Sáb/Dom/feriado × diurno/noturno
-  × 1ª/seguintes) → matriz `CODE_MATRIX` (e `TN_MATRIX` para o TN).
-- **Códigos da escala-base** (`M256`, `T13`, …) → `SHIFT_CODE_MAP` (defina
-  `worked` e, para turnos, `start`/`end`).
-- **Janela de noturno / Sábado / 1ª hora / limites** → campos próprios em
-  `PAYROLL_RULES`.
+```
+node tests/run-all.js            # suite completa, sai com código 1 se algo falhar
+node tests/algum-teste.test.js   # um ficheiro só, output mais detalhado
+```
 
-A interface e o motor de cálculo leem tudo a partir daí — nada está
-hard-coded noutro sítio.
+Node puro, **sem dependências e sem `npm install`**. O `tests/harness.js` extrai
+o `<script>` principal do `index.html` e corre-o num sandbox `vm` com um mock
+mínimo de `document`/`localStorage`. 18 ficheiros de teste.
+
+**Correr a suite antes de cada push** — esta ferramenta existe para acertar
+números de vencimento; um valor errado em silêncio anula-lhe o propósito.
 
 ## Lógica reutilizada
 
 A lógica de datas, feriados portugueses e janelas de turno foi reutilizada
 verbatim do gerador de escalas original
 ([scheduler](https://github.com/doctorwannabecoder/scheduler)):
-`iso`, `parseISO`, `addDays`, `easterSunday`, `holidaysForYear`,
-`isHoliday`, `holidayName`, `dayKind`, `isoWeekKey`, a tabela de feriados
-fixos e as janelas dia 08–20 / noite 20–08 / 24h 08–08 / prevenção.
+`iso`, `parseISO`, `addDays`, `easterSunday`, `holidaysForYear`, `isHoliday`,
+`holidayName`, `dayKind`, `isoWeekKey` e `PT_HOLIDAYS_FIXED`.
