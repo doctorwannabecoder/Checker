@@ -38,6 +38,17 @@ main `<script>` from `index.html` and runs it in a `vm` sandbox with a minimal
 **Run the suite before every push.** This tool exists to get payroll numbers
 right; a silently wrong figure defeats its entire purpose.
 
+## State model
+
+`UI.entries` (date -> {work, banco, prev}) is the source of truth for everything the
+user has filled in, and it outlives the visible period. `buildCalendar()` rebuilds
+rows from the prefill and then overlays `UI.entries`, which is what stops a period
+change from wiping entered days.
+
+**Any code that mutates `row.work` / `row.banco` / `row.prev` must call
+`rememberDay(date)`**, or the change is lost on the next rebuild. The same object is
+what gets saved to localStorage and exported to file.
+
 ## Conventions
 
 - UI text and commit messages: Portuguese for user-facing strings, English is fine for commits

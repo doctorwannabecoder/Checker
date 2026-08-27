@@ -91,17 +91,8 @@
   .alert.warn{background:#3a2a08;border-color:var(--warn);color:#fde68a}
   .alert.err{background:#3a0d0d;border-color:var(--err);color:#fecaca}
   .alert.ok{background:#0c2a16;border-color:var(--ok);color:#bbf7d0}
-  .alert.info{background:#0b2233;border-color:var(--accent);color:#bae6fd}
   .small{font-size:12px;color:var(--muted)}
   .muted{color:var(--muted)}
-  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-  @media(max-width:900px){.grid3{grid-template-columns:1fr}}
-  .shiftcard{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--panel2)}
-  .shiftcard.fds{border-left:4px solid var(--h24)}
-  .shiftcard.weekday{border-left:4px solid var(--day)}
-  .shiftcard h3{margin:0 0 8px 0;font-size:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .kv{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0;font-size:13px}
-  .kv span b{color:var(--text)}
   .splitline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
   #shiftsTable td.shiftcell{background:var(--panel2);vertical-align:middle;white-space:nowrap}
   #shiftsTable td.shiftcell.fds{border-left:4px solid var(--h24)}
@@ -118,9 +109,6 @@
   .pill.tn{background:var(--night);color:#fff}
   .pill.reg{background:#475569;color:#fff}
   .pill.prev{background:var(--prev);color:#06283b}
-  tr.r-off{opacity:.55}
-  tr.r-fds td:first-child{color:var(--h24)}
-  tr.r-extra{background:#10192e}
   /* Calendário de inserção manual — semanas na horizontal */
   .mcal{margin-bottom:20px}
   .mcal h3{margin:0 0 8px;font-size:13px;color:var(--accent2);font-weight:700;letter-spacing:-0.01em}
@@ -154,7 +142,7 @@
   .mcal td.weeksum b{color:var(--text)}
   .mcal td.weeksum .muted{color:var(--muted)}
   @media print{
-    header,footer,.tabs,.toolbar,.noprint{display:none!important}
+    header,footer,.toolbar,.noprint{display:none!important}
     body{background:#fff;color:#000}.card{border-color:#ccc;background:#fff}
     th{background:#eee;color:#000}.card h2{color:#000}
   }
@@ -169,6 +157,16 @@
 
 <main>
   <div id="confirmBanner"></div>
+
+  <div class="row noprint" style="margin-bottom:14px;align-items:center">
+    <button class="btn secondary" onclick="exportState()">⬇️ Exportar dados</button>
+    <label class="btn secondary" style="cursor:pointer;margin:0">⬆️ Importar dados
+      <input type="file" id="inpImport" accept="application/json,.json" style="display:none" onchange="importStateFile(this)"/>
+    </label>
+    <span class="small muted">Guarda ou repõe tudo — contrato, período e <b>todos os dias já preenchidos</b>,
+      mesmo os de meses fora do período atual. Útil para continuar noutro computador ou para acrescentar
+      meses sem reescrever o que já lá estava.</span>
+  </div>
 
   <!-- 1 · contrato -->
   <div class="card">
@@ -196,7 +194,7 @@
   <div class="card">
     <h2>2 · Período</h2>
     <div class="row">
-      <label id="lblStartMonth">Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
+      <label>Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
       <label>Nº de meses <select id="selNumMeses" onchange="onNumMesesChange()"></select></label>
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
     </div>
@@ -211,7 +209,7 @@
         <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span>
       </label>
     </div>
-    <p class="small" id="periodModeHint">Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas. <span id="periodHint"></span></p>
+    <p class="small" id="periodModeHint">Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas.</p>
   </div>
 
   <!-- 3 · DL 119/2026 -->
@@ -776,6 +774,23 @@ function computeEntry(entry, ctx, contractRem){
       // fator 0,5 sozinho nao daria, porque cada hora tem o seu multiplicador.
       const effMult=(prevH>0&&hourly>0)?round2(prevEur/(prevH*hourly)):pf;
       addAlloc(allocMap,'PREV', prevH, prevEur, {mult:effMult});
+      // Repartição por dia, como os turnos: a janela atravessa a meia-noite, por
+      // isso a prevenção aparece nos dois dias no Output 2.
+      const pDay={};
+      Object.entries(clsPrev.erMinDay).forEach(([dk,mins])=>{
+        const [rd,cat,seg,order]=dk.split('|');
+        const m=(ER_MULTIPLIER[cat] && ER_MULTIPLIER[cat][seg])?ER_MULTIPLIER[cat][seg][order]:0;
+        const cur=pDay[rd]||{h:0,e:0};
+        cur.h+=mins/60; cur.e+=(mins/60)*hourly*m*pf; pDay[rd]=cur;
+      });
+      Object.keys(pDay).forEach(rd=>{
+        const h=pDay[rd].h, e=pDay[rd].e;
+        const em=(h>0&&hourly>0)?round2(e/(h*hourly)):pf;
+        const alloc=makeAlloc('PREV', h, e, {mult:em});
+        const d=dayRows.find(x=>x.date===rd);
+        if(d) d.allocations.push(alloc); else dayRows.push({date:rd, allocations:[alloc]});
+      });
+      dayRows.sort((a,b)=>a.date.localeCompare(b.date));
     }
   }
 
@@ -844,6 +859,9 @@ function computeMonth(entries, ctx){
       // Horas de banco (ER) feitas ao Sábado/Domingo — usadas na condição do
       // Art.5º do DL 119/2026 (independente de ser feriado: a lei fala só de
       // sábado/domingo, por isso usa-se o dia da semana real, não `kind`).
+      // Só o banco (turnos ER) conta para a condição de fim de semana do
+      // Art.5º — a Prevenção não conta, nem aqui nem para o limite anual
+      // (250h/150h). CONFIRMADO pelo utilizador.
       if(e.er && r.totalH>0){
         const dow=parseISO(e.date).getDay();
         if(dow===0||dow===6) weekendBancoH+=r.totalH;
@@ -1030,7 +1048,15 @@ function daysInMonth(y,m){return new Date(y,m,0).getDate();}
 /* =========================================================================
    PARTE E — UI: estado + seletores
    ========================================================================= */
-let UI = { manualRows:[], lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false };
+/* UI.entries — TODOS os dias que o utilizador tocou (data -> {work,banco,prev}),
+   independentemente do período mostrado. buildCalendar() reconstrói as linhas a
+   partir do pré-preenchimento e sobrepõe-lhe isto, para que mudar de mês ou
+   acrescentar meses NÃO apague o que já estava preenchido. */
+let UI = { manualRows:[], entries:{}, lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false };
+function rememberDay(date){
+  const r=UI.rowByDate&&UI.rowByDate[date]; if(!r) return;
+  UI.entries[date]={work:r.work||'', banco:r.banco||'', prev:!!r.prev};
+}
 
 /* =========================================================================
    PARTE E-bis — PERSISTÊNCIA (localStorage)
@@ -1050,10 +1076,8 @@ let SAVE_ENABLED=true, PENDING_RESTORE=null;
 function collectState(){
   const val=id=>{const e=document.getElementById(id); return e?e.value:'';};
   const chk=id=>{const e=document.getElementById(id); return !!(e&&e.checked);};
-  const rows={};
-  (UI.manualRows||[]).forEach(r=>{ rows[r.date]={work:r.work||'', banco:r.banco||'', prev:!!r.prev}; });
   return {
-    v:2, savedAt:new Date().toISOString(),
+    v:1, savedAt:new Date().toISOString(),
     selCategory:val('selCategory'), selRegime:val('selRegime'),
     selWeeklyBase:val('selWeeklyBase'), selWeeklyRed:val('selWeeklyRed'),
     selRotinaH:val('selRotinaH'), selTardeH:val('selTardeH'), selExtraH:val('selExtraH'), selBolsaH:val('selBolsaH'),
@@ -1062,7 +1086,9 @@ function collectState(){
     chkDL119:chk('chkDL119'), inpDL119PriorHours:val('inpDL119PriorHours'),
     chkDL119LastBlock:chk('chkDL119LastBlock'), chkDL119WeekendConfirm:chk('chkDL119WeekendConfirm'),
     dl119MajBlocks:Array.from(UI.dl119MajBlocks||[]), dl119WeekendConfirmed:!!UI.dl119WeekendConfirmed,
-    rows
+    // TODOS os dias preenchidos, mesmo os de fora do período atual — é isto que
+    // permite acrescentar meses (ou importar um ficheiro) sem perder nada.
+    entries:UI.entries
   };
 }
 function saveState(){
@@ -1105,13 +1131,8 @@ function applyState(saved){
   UI.dl119MajBlocks=new Set(saved.dl119MajBlocks||[]);
   UI.dl119WeekendConfirmed=!!saved.dl119WeekendConfirmed;
   updateWeeklyHint();
-  updatePeriodAvailability(); buildCalendar();    // reconstrói UI.manualRows/rowByDate com o prefill por defeito
-  // sobrepõe os valores REAIS guardados por dia aos defaults recém-gerados
-  const rows=saved.rows||{};
-  Object.keys(rows).forEach(date=>{
-    const row=UI.rowByDate[date];
-    if(row){ row.work=rows[date].work||''; row.banco=rows[date].banco||''; row.prev=!!rows[date].prev; }
-  });
+  UI.entries=saved.entries||{};                   // buildCalendar() sobrepõe-nos ao prefill
+  updatePeriodAvailability(); buildCalendar();
   renderManualCalendar();
   calculate();
 }
@@ -1230,7 +1251,6 @@ function numMeses(){
 }
 /* Ano civil completo — com o teto acima, só possível com Janeiro + 12 meses. */
 function isFullYear(){ return numMeses()===12; }
-function isSingleMonth(){return numMeses()===1;}
 function startMonth(){
   const sm=document.getElementById('selStartMonth'), sy=document.getElementById('selStartYear');
   const m=sm?parseInt(sm.value,10):(new Date().getMonth()+1);
@@ -1346,8 +1366,6 @@ function updatePeriodAvailability(){
 }
 function updateWeeklyHint(){
   const base=weeklyBase(), red=weeklyReduction(), eff=currentWeekly();
-  const wh=document.getElementById('weeklyHint');
-  if(wh) wh.textContent=`${base}h${red?(' − '+red+'h'):''} = ${eff}h → ${dailyContractHours()}h/dia`;
   document.getElementById('dailyContractInfo').textContent=`Semanal efetivo: ${eff} h (Seg–Dom) · base diária ${dailyContractHours()} h`;
   const sh=document.getElementById('salaryHint');
   if(sh){
@@ -1415,7 +1433,11 @@ function buildCalendar(){
         const dow=parseISO(date).getDay();
         const isWeekendDay=(dow===0||dow===6);
         const work = isWeekendDay ? '' : (dayKind(date)==='holiday' ? 'folga' : 'rotina');
-        row={date, inMonth:inThis, work, banco:''};
+        // O que já foi preenchido ganha ao pré-preenchimento e sobrevive a
+        // mudanças de período (ver UI.entries).
+        const kept=UI.entries[date];
+        row = kept ? {date, inMonth:inThis, work:kept.work||'', banco:kept.banco||'', prev:!!kept.prev}
+                   : {date, inMonth:inThis, work, banco:'', prev:false};
         UI.manualRows.push(row); UI.rowByDate[date]=row;
       } else if(inThis){
         row.inMonth=true;   // semana partilhada entre 2 meses escolhidos: garante o inMonth correto
@@ -1536,6 +1558,7 @@ function renderManualCalendar(){
     const wrap=btn.parentElement, date=wrap.dataset.d, key=btn.dataset.k;
     const row=UI.rowByDate[date]; if(!row) return;
     row.work = (row.work===key) ? '' : key;
+    rememberDay(date);
     renderManualCalendar();
   }));
   host.querySelectorAll('.banco-btn').forEach(btn=>btn.addEventListener('click',e=>{
@@ -1545,6 +1568,7 @@ function renderManualCalendar(){
       row.prev=!row.prev;
       // P ocupa a noite: incompatível com N e com 24h, compatível com D.
       if(row.prev){ if(row.banco==='noite') row.banco=''; else if(row.banco==='h24') row.banco='dia'; }
+      rememberDay(date);
       renderManualCalendar(); return;
     }
     const isD=(row.banco==='dia'||row.banco==='h24'), isN=(row.banco==='noite'||row.banco==='h24');
@@ -1557,8 +1581,9 @@ function renderManualCalendar(){
     if(turnedOnNight && currentRegime()==='plena'){
       const nextDate=iso(addDays(parseISO(date),1));
       const nextRow=UI.rowByDate[nextDate];
-      if(nextRow) nextRow.work='bolsa';
+      if(nextRow){ nextRow.work='bolsa'; rememberDay(nextDate); }
     }
+    rememberDay(date);
     renderManualCalendar();
   }));
   saveState();
@@ -1682,7 +1707,7 @@ function calculate(){
   renderSummary(result.summary,result,dl119);
   // Output 2 (detalhe por turno) só faz sentido para 1 mês -> escondido em Anual/Variável.
   if(numMeses()>1){ document.getElementById('shiftsCard').style.display='none'; }
-  else { renderShifts(result.shifts.filter(s=>s.isER)); }
+  else { renderShifts(result.shifts.filter(s=>s.isER||s.isPrev)); }
   renderAnnual(result,dl119,dl119Projected);
   renderDL119Extras(dl119, windows, priorH, erHoursYear);
   // Atualiza a coluna "Semana" do calendário (ponto 4) com os totais agora calculados.
@@ -1812,33 +1837,44 @@ function renderShifts(shifts){
   if(!shifts.length){area.innerHTML=`<div class="muted">Nenhum turno ER no período.</div>`;return;}
   const dayNum=d=>parseISO(d).getDate();
   // Ordem pedida: TN primeiro, depois a 1ª hora, depois as seguintes.
-  const rank=a=> a.isTN?0:(/_1$/.test(a.key)?1:2);
+  // Ordem: TN, 1ª hora, seguintes e, por fim, a Prevenção (é disponibilidade,
+  // não trabalho — fica no fim do turno a que pertence).
+  const rank=a=> a.key==='PREV'?3:(a.isTN?0:(/_1$/.test(a.key)?1:2));
   const byRank=(a,b)=> (rank(a)-rank(b)) || String(a.code).localeCompare(String(b.code));
-  const shiftLabel=(s,totH)=>{
-    const multiDay=(s.endDate && s.endDate!==s.date);
-    const dates=multiDay?`${dayNum(s.date)}–${formatPT(s.endDate)}`:formatPT(s.date);
-    const hours=(s.start&&s.end)?`${s.start}–${s.end}`:'';
+  const pillCls=a=> a.key==='PREV'?'prev':(a.isTN?'tn':'er');
+  const shown=a=> a.isER||a.isTN||a.key==='PREV';
+  // Datas e totais vêm dos dias efetivamente mostrados — assim um dia só com
+  // Prevenção (sem turno) também mostra o intervalo e o total certos.
+  const shiftLabel=(s,dayList,totH,totE)=>{
+    const firstD=dayList[0].date, lastD=dayList[dayList.length-1].date;
+    const dates=(firstD!==lastD)?`${dayNum(firstD)}–${formatPT(lastD)}`:formatPT(firstD);
+    const pw=PAYROLL_RULES.preventionWindow;
+    // Um dia pode ter turno E prevenção — mostra as duas janelas.
+    const hTurno=(s.start&&s.end)?`${s.start}–${s.end}`:'';
+    const hPrev=(s.prevH>0)?`${pw.start}–${pw.end} (prev.)`:'';
+    const hours=[hTurno,hPrev].filter(Boolean).join(' + ');
     return `<b>${dates}</b><div class="small muted">${s.weekday}${hours?' · '+hours:''}</div>`+
       (s.holiday?`<div class="small" style="color:#fecaca">${s.holiday}</div>`:'')+
-      `<div class="shifttot">${totH.toFixed(2)} h · ${eur(s.shiftEur)}</div>`;
+      `<div class="shifttot">${totH.toFixed(2)} h · ${eur(totE)}</div>`;
   };
   const legend={};
   let body='';
   shifts.forEach(s=>{
     const dayList=(s.days||[])
-      .map(d=>({date:d.date, allocs:d.allocations.filter(a=>a.isER||a.isTN).sort(byRank)}))
+      .map(d=>({date:d.date, allocs:d.allocations.filter(shown).sort(byRank)}))
       .filter(d=>d.allocs.length);
     const nRows=dayList.reduce((t,d)=>t+d.allocs.length,0);
     if(!nRows) return;
     const totH=dayList.reduce((t,d)=>t+d.allocs.reduce((x,a)=>x+a.hours,0),0);
+    const totE=dayList.reduce((t,d)=>t+d.allocs.reduce((x,a)=>x+a.eur,0),0);
     let first=true;
     dayList.forEach(d=>{
       d.allocs.forEach((a,i)=>{
         legend[a.key]=a;
         body+=`<tr class="${first?'shiftstart':''}">`+
-          (first?`<td rowspan="${nRows}" class="shiftcell ${s.isFds?'fds':'weekday'}">${shiftLabel(s,totH)}</td>`:'')+
+          (first?`<td rowspan="${nRows}" class="shiftcell ${s.isFds?'fds':'weekday'}">${shiftLabel(s,dayList,totH,totE)}</td>`:'')+
           (i===0?`<td rowspan="${d.allocs.length}" class="small daycell">${formatPT(d.date)}</td>`:'')+
-          `<td><span class="pill ${a.isTN?'tn':'er'}">${a.code}</span></td>
+          `<td><span class="pill ${pillCls(a)}">${a.code}</span></td>
            <td class="num"><b>${a.hours.toFixed(2)}</b></td>
            <td class="num">${eur(a.eur)}</td></tr>`;
         first=false;
@@ -1849,7 +1885,7 @@ function renderShifts(shifts){
     }
   });
   const legendHtml=Object.values(legend).sort(byRank).map(a=>
-    `<span class="splitline"><span class="pill ${a.isTN?'tn':'er'}">${a.code}</span>
+    `<span class="splitline"><span class="pill ${pillCls(a)}">${a.code}</span>
       <span class="small">${a.desc}${codeBadges(a)}${a.mult?` · <b>×${a.mult}</b>`:''}</span></span>`).join('');
   area.innerHTML=`<table id="shiftsTable">
     <thead><tr><th>Turno</th><th>Dia</th><th>Categoria</th>
@@ -1947,7 +1983,48 @@ function toggleDL119Block(n){
 function toast(msg,err){const t=document.createElement('div');t.textContent=msg;
   t.style.cssText=`position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:${err?'var(--err)':'var(--ok)'};color:#06283b;padding:10px 18px;border-radius:10px;font-weight:700;z-index:99`;
   document.body.appendChild(t);setTimeout(()=>t.remove(),1800);}
-function copyToClipboard(text,ok){navigator.clipboard.writeText(text).then(()=>toast(ok||'Copiado!'),()=>toast('Falha ao copiar.',true));}
+
+/* ---- exportar / importar ficheiro ----
+   O ficheiro é o mesmo objeto que vai para o localStorage, por isso leva também
+   UI.entries (todos os dias preenchidos, incluindo meses fora do período atual).
+   Importar repõe tudo e o calendário passa a ter esses dias já marcados. */
+function stateToJSON(){ return JSON.stringify(collectState(), null, 2); }
+function stateFileName(){
+  const {y,m}=startMonth();
+  return `checker-${y}-${String(m).padStart(2,'0')}-${numMeses()}m.json`;
+}
+/* Devolve true se o conteúdo era um ficheiro válido (e aplica-o). */
+function applyImportedState(text){
+  let saved=null;
+  try{ saved=JSON.parse(text); }catch(e){ return false; }
+  if(!saved || typeof saved!=='object' || typeof saved.entries!=='object' || saved.entries===null) return false;
+  applyState(saved);
+  saveState();
+  return true;
+}
+function exportState(){
+  try{
+    const blob=new Blob([stateToJSON()],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=stateFileName();
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast('Ficheiro exportado.');
+  }catch(e){ toast('Não foi possível exportar.',true); }
+}
+function importStateFile(input){
+  const f=input && input.files && input.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const ok=applyImportedState(String(rd.result));
+    toast(ok ? 'Dados importados.'
+             : 'Ficheiro inválido — não parece um ficheiro do Verificador.', !ok);
+    input.value='';
+  };
+  rd.onerror=()=>{ toast('Não foi possível ler o ficheiro.',true); input.value=''; };
+  rd.readAsText(f);
+}
 
 /* ---- arranque ---- */
 const _savedState=loadSavedState();

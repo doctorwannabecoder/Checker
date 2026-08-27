@@ -11,6 +11,7 @@ document.getElementById('selStartYear').value='2026';
 updatePeriodAvailability();
 buildCalendar();
 UI.rowByDate['2026-05-06'].work='extra';   // dia especifico marcado como Alternativo
+rememberDay('2026-05-06');                 // como faz o clique na UI
 renderManualCalendar();
 document.getElementById('chkDL119').checked=true;
 document.getElementById('inpDL119PriorHours').value='42';
@@ -23,7 +24,8 @@ assertEqual(saved.selCategory, 'assistente', 'estado guardado: categoria');
 assertEqual(saved.selRegime, 'plena', 'estado guardado: regime');
 assertEqual(saved.chkDL119, true, 'estado guardado: DL119 ligado');
 assertEqual(saved.inpDL119PriorHours, '42', 'estado guardado: horas previas DL119');
-assertEqual(saved.rows['2026-05-06'].work, 'extra', 'estado guardado: dia especifico com Alternativo');
+assertEqual(saved.entries['2026-05-06'].work, 'extra', 'estado guardado: dia especifico com Alternativo');
+assertEqual(saved.v, 1, 'versao do payload alinhada com a chave (_v1)');
 
 console.log('OK: saveState() persiste o estado completo em localStorage — '+CHECKS_RUN+' assercoes.');
 `);

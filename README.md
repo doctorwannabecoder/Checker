@@ -120,6 +120,20 @@ pagar as 12h ao dia em que começa. **Por confirmar com o acordo coletivo.**
 Qualquer entrada com `confirm:true` mostra o badge amarelo — use isso ao introduzir
 qualquer regra ainda por validar.
 
+## Guardar, exportar e importar
+
+O que se preenche fica guardado no proprio navegador (localStorage) e reaparece no
+arranque seguinte, com um banner a perguntar se quer repor.
+
+Os botoes **Exportar dados** / **Importar dados** (topo da pagina) gravam e leem um
+ficheiro `.json` com tudo: contrato, periodo e **todos os dias ja preenchidos** —
+incluindo os de meses fora do periodo atual. Serve para continuar noutro
+computador, para guardar uma copia, ou para retomar mais tarde.
+
+Mudar o mes inicial ou o numero de meses **nao apaga** o que ja estava preenchido:
+os dias tocados sao guardados a parte e voltam a aparecer quando o periodo os
+incluir outra vez. Os dias nunca tocados mantem o pre-preenchimento normal.
+
 ## Testes
 
 ```
