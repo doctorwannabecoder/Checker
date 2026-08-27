@@ -163,7 +163,6 @@
     <label class="btn secondary" style="cursor:pointer;margin:0">⬆️ Importar dados
       <input type="file" id="inpImport" accept="application/json,.json" style="display:none" onchange="importStateFile(this)"/>
     </label>
-    <select id="selJumpMonth" onchange="jumpToMonth(this)" style="display:none"></select>
     <span class="small muted">Guarda ou repõe tudo — contrato, período e <b>todos os dias já preenchidos</b>,
       mesmo os de meses fora do período atual. Útil para continuar noutro computador ou para acrescentar
       meses sem reescrever o que já lá estava.</span>
@@ -198,6 +197,8 @@
       <label>Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
       <label>Nº de meses <select id="selNumMeses" onchange="onNumMesesChange()"></select></label>
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
+      <label>Editar mês já preenchido
+        <select id="selJumpMonth" onchange="jumpToMonth(this)"></select></label>
     </div>
     <div class="row" id="deficitToggleRow" style="margin-top:10px">
       <label class="inline"><input type="checkbox" id="chkDeficit" onchange="toggleDeficit()"/>
@@ -2136,13 +2137,17 @@ function fillJumpMonths(){
   const keys=Object.keys(set).sort();
   const atual=(selectedMonths()[0]||{});
   const atualKey=atual.y?`${atual.y}-${String(atual.m).padStart(2,'0')}`:'';
-  sel.innerHTML='<option value="">✏️ Editar mês preenchido…</option>'+
-    keys.map(k=>{
-      const y=k.slice(0,4), m=+k.slice(5,7);
-      const aqui=(k===atualKey && numMeses()===1)?' ✓':'';
-      return `<option value="${k}">${MONTHS_PT[m-1]} ${y}${aqui}</option>`;
-    }).join('');
-  sel.style.display=keys.length?'':'none';
+  // Sempre visível — desativado enquanto não houver meses preenchidos, para que
+  // se perceba que a opção existe antes de haver dados.
+  sel.innerHTML = keys.length
+    ? '<option value="">— escolher mês —</option>'+
+      keys.map(k=>{
+        const y=k.slice(0,4), m=+k.slice(5,7);
+        const aqui=(k===atualKey && numMeses()===1)?' ✓ (a editar)':'';
+        return `<option value="${k}">${MONTHS_PT[m-1]} ${y}${aqui}</option>`;
+      }).join('')
+    : '<option value="">(ainda sem meses preenchidos)</option>';
+  sel.disabled=!keys.length;
   sel.value='';
 }
 function jumpToMonth(sel){
