@@ -206,7 +206,8 @@
     <div class="row" id="deficitRow" style="margin-top:10px;display:none">
       <label>Horas em défice (até ao fim do mês anterior)
         <input type="number" id="inpInitialDeficit" min="0" step="0.5" value="0" style="width:90px"/>
-        <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.</span>
+        <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel1">—</b> — somam-se ao contrato da 1ª semana.
+          <span id="deficitAuto" class="badge" style="margin-left:6px"></span></span>
       </label>
     </div>
     <p class="small" id="periodModeHint">Período de <b>1 mês</b> + dias das semanas de fronteira nas duas pontas.</p>
@@ -223,6 +224,7 @@
     <div class="row" id="dl119PriorHoursRow" style="margin-top:10px;display:none">
       <label>Horas Extra realizadas (até ao fim do mês anterior)
         <input type="number" id="inpDL119PriorHours" min="0" step="0.5" value="0" style="width:100px"/>
+        <span id="dl119PriorAuto" class="badge" style="margin-left:6px"></span>
         <span class="small" style="font-weight:400">Até ao fim de <b id="priorMonthLabel2">—</b>. Usado para avaliar corretamente o limite anual do DL 119/2026 (250h/150h).
           As Horas Extra são as que aparecem no recibo — ex.: um Banco Noite (20:00–08:00) que atravesse a meia-noite do último dia do mês conta <b>4h no recibo desse mês</b> e <b>8h no recibo do mês seguinte</b>.</span>
       </label>
@@ -308,6 +310,21 @@
   </div>
 
   <div id="paneOutAnual" class="pane">
+  <!-- HISTÓRICO · meses já preenchidos antes do período -->
+  <div id="historyCard" class="card" style="display:none">
+    <h2>Já ganho antes deste período</h2>
+    <div style="overflow-x:auto">
+      <table id="historyTable">
+        <thead><tr><th>Meses</th><th class="num">Nº</th><th class="num">Base + subsídios</th>
+          <th class="num">Extra ER+TN</th><th class="num">Total (€)</th></tr></thead>
+        <tbody></tbody><tfoot></tfoot>
+      </table>
+    </div>
+    <p class="small">Recalculado a partir dos dias guardados — corrigir um dia antigo corrige este total.
+      É daqui que saem, automaticamente, o <b>défice de horas</b> que transita para o período selecionado
+      e as <b>horas Extra já feitas</b> no ano (limite do DL 119/2026).</p>
+  </div>
+
   <!-- OUTPUT 3 · ANUAL -->
   <div id="annualCard" class="card" style="display:none">
     <h2>Output 3 · Estimativa anual de rendimento</h2>
@@ -1192,9 +1209,10 @@ function erHourly(){
 // Ex.: período Mar-Ago (6 meses) -> Jan-Jun presentes = Mar,Abr,Mai,Jun (4 de
 // 6) -> subsídio de férias = 4/6 do vencimento mensal; Dezembro não está no
 // período -> sem subsídio de Natal.
-function periodBaseWithSubsidios(){
+/* Base + subsídios para uma lista arbitrária de meses — serve o período
+   selecionado e também o histórico (meses já preenchidos antes dele). */
+function baseForMonths(months){
   const monthlyBase=currentMonthlyBase();
-  const months=selectedMonths();
   const n=months.length;
   const firstHalf=months.filter(mo=>mo.m>=1&&mo.m<=6).length;
   const secondHalf=months.filter(mo=>mo.m>=7&&mo.m<=12).length;
@@ -1206,6 +1224,7 @@ function periodBaseWithSubsidios(){
   return {monthlyBase, n, firstHalf, secondHalf, hasJune, hasDecember,
     regular, subJune, subDec, total:round2(regular+subJune+subDec)};
 }
+function periodBaseWithSubsidios(){ return baseForMonths(selectedMonths()); }
 // Suplemento de Dedicação Plena (25% do ordenado base) contido num dado
 // montante de vencimento base — usado para DECOMPOR (mostrar separadamente)
 // o valor já incluído em `baseAmount`, sem somar nada de novo.
@@ -1232,6 +1251,7 @@ function bolsaHours(){return parseFloat(document.getElementById('selBolsaH').val
 // contrato da 1ª semana processada; ver PARTE C).
 function initialDeficitHours(){
   if(isFullYear()) return 0;   // ano inteiro inserido -> nao ha defice "previo" a somar
+  if(UI.history) return UI.history.deficit;   // vem dos meses já preenchidos
   const c=document.getElementById('chkDeficit'); if(c && !c.checked) return 0;
   const e=document.getElementById('inpInitialDeficit');const v=e?parseFloat(e.value):0;return v>0?v:0;
 }
@@ -1269,6 +1289,18 @@ function priorAnchorMonth(){
   return {y:py,m:pm};
 }
 function priorAnchorLabel(){ const {y,m}=priorAnchorMonth(); return `${MONTHS_PT[m-1]} de ${y}`; }
+
+/* Linha de um dia: pré-preenchimento (dia útil -> Rotina; feriado em dia útil
+   -> Folga; fim de semana -> nada) com o que o utilizador guardou por cima.
+   Usada pelo calendário e pelo cálculo do histórico. */
+function rowForDate(date, inMonth){
+  const dow=parseISO(date).getDay();
+  const isWeekendDay=(dow===0||dow===6);
+  const work = isWeekendDay ? '' : (dayKind(date)==='holiday' ? 'folga' : 'rotina');
+  const kept=(UI.entries||{})[date];
+  return kept ? {date, inMonth, work:kept.work||'', banco:kept.banco||'', prev:!!kept.prev}
+              : {date, inMonth, work, banco:'', prev:false};
+}
 
 /* Dias de fim de semana (sábado/domingo reais, mesmo que sejam feriado). */
 function isWeekendDate(dateISO){ const d=parseISO(dateISO).getDay(); return d===0||d===6; }
@@ -1430,14 +1462,7 @@ function buildCalendar(){
         // feriado NUM DIA ÚTIL -> Folga; qualquer fim de semana (sábado ou
         // domingo, MESMO que seja feriado) -> nada (já é dia de descanso por
         // ser fim de semana, marcar Folga aí seria redundante).
-        const dow=parseISO(date).getDay();
-        const isWeekendDay=(dow===0||dow===6);
-        const work = isWeekendDay ? '' : (dayKind(date)==='holiday' ? 'folga' : 'rotina');
-        // O que já foi preenchido ganha ao pré-preenchimento e sobrevive a
-        // mudanças de período (ver UI.entries).
-        const kept=UI.entries[date];
-        row = kept ? {date, inMonth:inThis, work:kept.work||'', banco:kept.banco||'', prev:!!kept.prev}
-                   : {date, inMonth:inThis, work, banco:'', prev:false};
+        row = rowForDate(date, inThis);
         UI.manualRows.push(row); UI.rowByDate[date]=row;
       } else if(inThis){
         row.inMonth=true;   // semana partilhada entre 2 meses escolhidos: garante o inMonth correto
@@ -1595,8 +1620,11 @@ function renderManualCalendar(){
    workType/bancoType identificam o tick escolhido (ex.: 'rotina', 'noite') —
    usados nas validações por regime. */
 function collectEntries(){
-  return UI.manualRows.filter(r=>r.work||r.banco||r.prev)
-    .map(r=>{
+  return UI.manualRows.filter(r=>r.work||r.banco||r.prev).map(entryFromRow);
+}
+/* Uma linha do calendário -> uma entrada para o motor. */
+function entryFromRow(r){
+  {
       // Urgência D (08:00–20:00) ou 24h sobrepõe-se ao horário diurno normal
       // -> ignora o trabalho normal desse dia (evita duplicar horas).
       const ignoresFromBanco = (r.banco==='dia'||r.banco==='h24');
@@ -1619,7 +1647,78 @@ function collectEntries(){
               er:!!b, prevention:isPrev,
               start:b?b.start:'', end:b?b.end:'',
               workType:effectiveWork, bancoType:r.banco||''};
-    });
+  }
+}
+
+/* =========================================================================
+   HISTÓRICO — meses já preenchidos ANTES do período selecionado.
+   Recalculado sempre a partir dos dias guardados (UI.entries), nunca de um
+   total gravado: corrigir um dia antigo corrige o ano todo.
+   Serve para três coisas que antes eram escritas à mão:
+     · o défice de horas que transita para o período selecionado;
+     · as horas ER já feitas no ano (limite do DL119);
+     · o "já ganho" mostrado no separador anual.
+   O corte é a SEGUNDA-FEIRA da semana do 1º dia do período, para que a semana
+   de fronteira pertença inteira ao período novo e o défice feche certo.
+   ========================================================================= */
+function historyCutoffISO(){
+  const months=selectedMonths(); if(!months.length) return null;
+  return mondayOfWeek(`${months[0].y}-${String(months[0].m).padStart(2,'0')}-01`);
+}
+function historyMonths(){
+  const cutoff=historyCutoffISO(); if(!cutoff) return [];
+  const set={};
+  Object.keys(UI.entries||{}).forEach(d=>{ if(d<cutoff) set[d.slice(0,7)]=true; });
+  return Object.keys(set).sort().map(k=>({y:+k.slice(0,4), m:+k.slice(5,7)}));
+}
+function computeHistory(){
+  const cutoff=historyCutoffISO(); if(!cutoff) return null;
+  const filled=Object.keys(UI.entries||{}).filter(d=>d<cutoff).sort();
+  if(!filled.length) return null;
+  const fromISO=mondayOfWeek(filled[0]);
+  const toISO=iso(addDays(parseISO(cutoff),-1));
+  const rows=[]; let d=parseISO(fromISO); const end=parseISO(toISO);
+  while(d<=end){ rows.push(rowForDate(iso(d), true)); d=addDays(d,1); }
+  const entries=rows.filter(r=>r.work||r.banco||r.prev).map(entryFromRow);
+  if(!entries.length) return null;
+  const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(),
+    hourly:erHourly(), initialDeficit:0, regime:currentRegime()};
+  const res=computeMonth(entries, ctx);
+  const ws=res.weeklyStats||[];
+  const months=historyMonths();
+  const base=baseForMonths(months);
+  return {fromISO, toISO, months, base,
+    deficit:round2(ws.length?(ws[ws.length-1].deficitOut||0):0),
+    erHours:res.totalErHours, extraEur:res.totalExtraEur,
+    total:round2(base.total+res.totalExtraEur)};
+}
+/* Mês seguinte ao último que tem dias preenchidos — para onde saltar depois
+   de importar um ficheiro. */
+function nextUnfilledMonth(){
+  const ds=Object.keys(UI.entries||{}).sort();
+  if(!ds.length) return null;
+  const last=parseISO(ds[ds.length-1]);
+  let y=last.getFullYear(), m=last.getMonth()+2;
+  if(m>12){ m-=12; y++; }
+  return {y,m};
+}
+/* Com histórico, o défice e as horas ER prévias deixam de ser escritos à mão. */
+function syncHistoryUI(){
+  const h=UI.history;
+  const dEl=document.getElementById('inpInitialDeficit');
+  const dNote=document.getElementById('deficitAuto');
+  const pEl=document.getElementById('inpDL119PriorHours');
+  const pNote=document.getElementById('dl119PriorAuto');
+  if(dEl){ dEl.disabled=!!h; if(h) dEl.value=String(h.deficit); }
+  if(dNote) dNote.innerHTML = h
+    ? `Calculado a partir dos <b>${h.months.length}</b> ${h.months.length===1?'mês':'meses'} já preenchidos.`
+    : '';
+  const tRow=document.getElementById('deficitToggleRow');
+  if(tRow) tRow.style.display = (h||isFullYear()) ? 'none' : '';
+  const dRow=document.getElementById('deficitRow');
+  if(dRow && h) dRow.style.display='';
+  if(pEl){ pEl.disabled=!!h; if(h) pEl.value=String(h.erHours); }
+  if(pNote) pNote.innerHTML = h ? 'Calculado a partir dos meses já preenchidos.' : '';
 }
 
 /* =========================================================================
@@ -1631,15 +1730,21 @@ function isDL119Enabled(){ const e=document.getElementById('chkDL119'); return !
 // corretamente mesmo quando nem todos os meses do ano estão na ferramenta.
 function dl119PriorHours(){
   if(isFullYear()) return 0;   // ano inteiro inserido -> nao ha horas Extra "previas" a somar
+  if(UI.history) return UI.history.erHours;   // vem dos meses já preenchidos
   const e=document.getElementById('inpDL119PriorHours'); const v=e?parseFloat(e.value):0; return v>0?v:0;
 }
 
 function calculate(){
+  // O histórico tem de ser calculado ANTES do ctx: é dele que vêm o défice
+  // inicial e as horas ER prévias do DL119.
+  UI.history=computeHistory();
+  syncHistoryUI();
   const entries=collectEntries(), meta=document.getElementById('calcMeta');
   if(!entries.length){ meta.innerHTML=`<span class="alert err" style="display:inline-block">Nada para calcular (preencha o calendário).</span>`; return; }
   const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(), hourly:erHourly(),
     initialDeficit:initialDeficitHours(), regime:currentRegime()};
   const result=computeMonth(entries,ctx); UI.lastResult=result; UI.lastCtx=ctx;
+  renderHistory(result);
   meta.innerHTML='';
 
   // DL119 é calculado ANTES do Output 1, para que as suas linhas/valores já
@@ -1894,6 +1999,37 @@ function renderShifts(shifts){
     <div class="catlegend">${legendHtml}</div>`;
 }
 function formatPT(dateISO){const [y,m,d]=dateISO.split('-');return `${d}/${m}/${y}`;}
+/* Tabela do histórico: o que já foi ganho nos meses anteriores, o que rende o
+   período selecionado, e o acumulado. */
+function renderHistory(result){
+  const card=document.getElementById('historyCard'); if(!card) return;
+  const h=UI.history;
+  if(!h){ card.style.display='none'; return; }
+  card.style.display='block';
+  const tb=document.querySelector('#historyTable tbody'), tf=document.querySelector('#historyTable tfoot');
+  const pb=periodBaseWithSubsidios();
+  const novoExtra=(result&&result.totalExtraEur)||0;
+  const novoTotal=round2(pb.total+novoExtra);
+  const span=ms=>{
+    if(!ms.length) return '—';
+    const a=ms[0], b=ms[ms.length-1];
+    return (a.y===b.y && a.m===b.m) ? `${MONTHS_PT[a.m-1]} ${a.y}`
+      : `${MONTHS_PT[a.m-1]} ${a.y} – ${MONTHS_PT[b.m-1]} ${b.y}`;
+  };
+  tb.innerHTML=
+    `<tr><td>${span(h.months)}<div class="small muted">já preenchidos</div></td>
+      <td class="num">${h.months.length}</td><td class="num">${eur(h.base.total)}</td>
+      <td class="num">${eur(h.extraEur)}</td><td class="num">${eur(h.total)}</td></tr>
+     <tr><td>${span(selectedMonths())}<div class="small muted">período selecionado</div></td>
+      <td class="num">${pb.n}</td><td class="num">${eur(pb.total)}</td>
+      <td class="num">${eur(novoExtra)}</td><td class="num">${eur(novoTotal)}</td></tr>`;
+  tf.innerHTML=`<tr style="font-weight:700;background:#132030">
+    <td>ACUMULADO</td><td class="num">${h.months.length+pb.n}</td>
+    <td class="num">${eur(h.base.total+pb.total)}</td>
+    <td class="num">${eur(h.extraEur+novoExtra)}</td>
+    <td class="num">${eur(h.total+novoTotal)} bruto</td></tr>`;
+}
+
 function renderAnnual(result,dl119,dl119Projected){
   document.getElementById('annualCard').style.display='block';
   const tb=document.querySelector('#annualTable tbody'), tf=document.querySelector('#annualTable tfoot');
@@ -1999,6 +2135,17 @@ function applyImportedState(text){
   try{ saved=JSON.parse(text); }catch(e){ return false; }
   if(!saved || typeof saved!=='object' || typeof saved.entries!=='object' || saved.entries===null) return false;
   applyState(saved);
+  // Continuar onde o ficheiro ficou: salta para o mês a seguir ao último com
+  // dias preenchidos, com 1 mês selecionado (o utilizador alarga se quiser).
+  const nx=nextUnfilledMonth();
+  if(nx){
+    const sy=document.getElementById('selStartYear'), sm=document.getElementById('selStartMonth');
+    if(sy) sy.value=String(nx.y);
+    if(sm) sm.value=String(nx.m);
+    fillNumMesesOptions();
+    const nm=document.getElementById('selNumMeses'); if(nm) nm.value='1';
+    updatePeriodAvailability(); buildCalendar();
+  }
   saveState();
   return true;
 }

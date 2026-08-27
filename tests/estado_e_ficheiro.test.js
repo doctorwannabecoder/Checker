@@ -44,16 +44,20 @@ buildCalendar();
 assertEqual(UI.rowByDate['2026-05-09'], undefined, 'depois de limpar, Maio nem esta no periodo');
 
 assertEqual(applyImportedState(json), true, 'importar um ficheiro valido devolve true');
-assertEqual(document.getElementById('selStartMonth').value, '5', 'importar repoe o mes inicial');
-assertEqual(numMeses(), 1, 'importar repoe o nº de meses');
-assertEqual(UI.rowByDate['2026-05-09'].banco, 'dia', 'importar repoe os dias preenchidos');
-assertEqual(UI.rowByDate['2026-05-09'].prev, true, 'importar repoe a Prevencao');
+// importar CONTINUA de onde o ficheiro ficou: salta para o mes a seguir ao
+// ultimo com dias preenchidos (Maio -> Junho), com 1 mes selecionado
+assertEqual(document.getElementById('selStartMonth').value, '6', 'importar salta para o mes seguinte (Junho)');
+assertEqual(document.getElementById('selStartYear').value, '2026', 'importar mantem o ano');
+assertEqual(numMeses(), 1, 'importar seleciona 1 mes');
+assertEqual(UI.entries['2026-05-09'].banco, 'dia', 'importar repoe os dias preenchidos');
+assertEqual(UI.entries['2026-05-09'].prev, true, 'importar repoe a Prevencao');
+assertEqual(UI.rowByDate['2026-05-09'], undefined, 'Maio ja nao esta no periodo mostrado');
 
 // ficheiros invalidos nao rebentam nem apagam nada
 assertEqual(applyImportedState('isto nao e json'), false, 'texto invalido -> false');
 assertEqual(applyImportedState('{"outra":"coisa"}'), false, 'json sem entries -> false');
 assertEqual(applyImportedState('null'), false, 'null -> false');
-assertEqual(UI.rowByDate['2026-05-09'].banco, 'dia', 'apos importacao falhada o estado fica intacto');
+assertEqual(UI.entries['2026-05-09'].banco, 'dia', 'apos importacao falhada o estado fica intacto');
 
 /* 3) A Prevencao aparece no Output 2 */
 const R=20;

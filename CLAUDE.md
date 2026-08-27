@@ -49,6 +49,21 @@ change from wiping entered days.
 `rememberDay(date)`**, or the change is lost on the next rebuild. The same object is
 what gets saved to localStorage and exported to file.
 
+## History
+
+`computeHistory()` recomputes every month filled in *before* the selected period,
+straight from `UI.entries`. It supplies `initialDeficitHours()` and
+`dl119PriorHours()` — those two inputs are only typed by hand when there is no
+history — and feeds the "Ja ganho antes deste periodo" table.
+
+The cutoff is the **Monday of the week containing the period's first day**, not the
+first day itself, so the boundary week belongs wholly to the new period and the
+carried deficit closes correctly. `UI.history` is refreshed at the top of
+`calculate()`, before the ctx is built, because the ctx depends on it.
+
+Never cache a computed total into the saved file: the file holds days only, and the
+history is derived. That is what makes correcting an old day fix the whole year.
+
 ## Conventions
 
 - UI text and commit messages: Portuguese for user-facing strings, English is fine for commits

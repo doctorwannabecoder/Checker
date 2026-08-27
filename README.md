@@ -134,6 +134,29 @@ Mudar o mes inicial ou o numero de meses **nao apaga** o que ja estava preenchid
 os dias tocados sao guardados a parte e voltam a aparecer quando o periodo os
 incluir outra vez. Os dias nunca tocados mantem o pre-preenchimento normal.
 
+## Continuar mes a mes
+
+O ficheiro exportado guarda **todos os dias ja preenchidos**, mesmo os de meses
+fora do periodo atual. Ao **importar**, a app salta para o **mes a seguir ao ultimo
+preenchido** e seleciona 1 mes — e so continuar a preencher.
+
+Os meses anteriores nao ficam so guardados: sao **recalculados** e usados para
+
+- o **defice de horas** que transita para o periodo selecionado (o campo passa a
+  estar preenchido e bloqueado, com a nota de que vem do historico);
+- as **horas Extra ja feitas** no ano, para o limite do DL 119/2026;
+- a tabela **"Ja ganho antes deste periodo"**, no separador anual, que mostra o
+  historico, o periodo selecionado e o **acumulado**.
+
+Isto e o que faz com que preencher mes a mes de o **mesmo total** que preencher o
+periodo todo de uma vez. Sem o defice herdado, cada mes recomecava do zero e o
+total do ano ficava inflacionado.
+
+> Como o historico e recalculado a partir dos dias (e nao de um total gravado),
+> corrigir um dia antigo corrige o ano inteiro. Em contrapartida, todos os meses
+> sao calculados com o contrato **atual** — se houver uma promocao a meio do ano,
+> os meses antigos passam a ser recalculados ao vencimento novo.
+
 ## Testes
 
 ```
