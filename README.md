@@ -56,6 +56,11 @@ dia de descanso). Os dias fora do período contam só para a validação semanal
 
 ## Saídas
 
+Os **subsidios de ferias e de Natal** valem **um vencimento base inteiro cada** e
+entram no mes em que sao pagos (Junho e Dezembro) — nao sao proporcionais aos meses
+inseridos. Inserir so Junho da 2x o vencimento, porque e isso que o recibo de Junho
+mostra.
+
 - **Output 1 — Resumo por categoria de pagamento:** uma linha por categoria com
   horas, **coeficiente** e €/hora (o valor base da tabela SIM) — a linha lê-se
   `Horas × Coef. × €/hora = Valor`. A linha Base é um vencimento mensal, por isso
@@ -147,6 +152,12 @@ Os meses anteriores nao ficam so guardados: sao **recalculados** e usados para
 - as **horas Extra ja feitas** no ano, para o limite do DL 119/2026;
 - a tabela **"Ja ganho antes deste periodo"**, no separador anual, que mostra o
   historico, o periodo selecionado e o **acumulado**.
+
+Para **corrigir um mes ja preenchido** nao e preciso andar a mexer no "Mes inicial"
+e no "Nº de meses": a lista **"Editar mes preenchido…"**, ao lado dos botoes de
+exportar/importar, salta direto para qualquer mes que ja tenha dias preenchidos
+(o mes que esta a ser mostrado aparece com um ✓). Como o historico e recalculado,
+a correcao reflete-se logo no acumulado.
 
 Isto e o que faz com que preencher mes a mes de o **mesmo total** que preencher o
 periodo todo de uma vez. Sem o defice herdado, cada mes recomecava do zero e o

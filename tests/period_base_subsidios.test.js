@@ -1,68 +1,80 @@
 const {loadApp}=require('./harness');
 const app=loadApp();
 app.run(`
+/* Subsidios de ferias e de Natal: cada um vale UM VENCIMENTO BASE INTEIRO, pago
+   no mes em que cai (Junho / Dezembro). NAO sao proporcionais aos meses que
+   estao inseridos na ferramenta — o recibo de Junho traz o subsidio inteiro
+   mesmo que so se tenha inserido esse mes, e e o recibo que se quer conferir. */
 document.getElementById('selCategory').value='assistente';
 document.getElementById('selRegime').value='geral';
 document.getElementById('selStartYear').value='2026';
 
-// Caso 1: Mensal, mes normal (Maio) -- deve ficar IGUAL ao vencimento simples (sem subsidio)
-document.getElementById('selStartMonth').value='5';
-updatePeriodAvailability();
+// Caso 1: mes normal (Maio) -- sem subsidios
+setPeriod(5,1);
 let pb=periodBaseWithSubsidios();
-assertEqual(pb.n, 1, 'Mensal/Maio: n=1');
-assertEqual(pb.total, pb.monthlyBase, 'Mensal/Maio: total = 1x vencimento (sem subsidio)');
-assertEqual(pb.subJune, 0, 'Mensal/Maio: sem subsidio de ferias');
-assertEqual(pb.subDec, 0, 'Mensal/Maio: sem subsidio de Natal');
+assertEqual(pb.n, 1, 'Maio: n=1');
+assertEqual(pb.total, pb.monthlyBase, 'Maio: total = 1x vencimento (sem subsidio)');
+assertEqual(pb.subJune, 0, 'Maio: sem subsidio de ferias');
+assertEqual(pb.subDec, 0, 'Maio: sem subsidio de Natal');
 
-// Caso 2: Mensal, mes de Junho -- 1/6 de subsidio de ferias SOMA ao total
-document.getElementById('selStartMonth').value='6';
-updatePeriodAvailability();
+// Caso 2: Junho sozinho -- subsidio de ferias INTEIRO
+setPeriod(6,1);
 pb=periodBaseWithSubsidios();
-assertEqual(pb.firstHalf, 1, 'Mensal/Junho: 1 dos 6 meses Jan-Jun presente');
-assertClose(pb.subJune, round2(pb.monthlyBase*(1/6)), 'Mensal/Junho: subsidio = 1/6 do vencimento');
-assertClose(pb.total, round2(pb.monthlyBase+pb.monthlyBase*(1/6)), 'Mensal/Junho: total inclui o subsidio');
+assertEqual(pb.hasJune, true, 'Junho: o mes esta no periodo');
+assertClose(pb.subJune, pb.monthlyBase, 'Junho: subsidio de ferias = 1 vencimento inteiro');
+assertEqual(pb.subDec, 0, 'Junho: sem subsidio de Natal');
+assertClose(pb.total, round2(pb.monthlyBase*2), 'Junho sozinho: total = 2x vencimento');
 
-// Caso 3: Mensal, mes de Dezembro -- 1/6 de subsidio de Natal
-document.getElementById('selStartMonth').value='12';
-updatePeriodAvailability();
+// Caso 3: Dezembro sozinho -- subsidio de Natal INTEIRO
+setPeriod(12,1);
 pb=periodBaseWithSubsidios();
-assertEqual(pb.secondHalf, 1, 'Mensal/Dezembro: 1 dos 6 meses Jul-Dez presente');
-assertClose(pb.subDec, round2(pb.monthlyBase*(1/6)), 'Mensal/Dezembro: subsidio = 1/6 do vencimento');
+assertEqual(pb.hasDecember, true, 'Dezembro: o mes esta no periodo');
+assertClose(pb.subDec, pb.monthlyBase, 'Dezembro: subsidio de Natal = 1 vencimento inteiro');
+assertEqual(pb.subJune, 0, 'Dezembro: sem subsidio de ferias');
+assertClose(pb.total, round2(pb.monthlyBase*2), 'Dezembro sozinho: total = 2x vencimento');
 
-// Caso 4: Anual (12 meses) -- tem de dar EXATAMENTE monthlyBase*14 (formula antiga, flat)
+// Caso 4: ano civil completo -- 12 meses + os 2 subsidios = 14x
 setPeriod(1,12);
 pb=periodBaseWithSubsidios();
-assertEqual(pb.n, 12, 'Anual: n=12');
-assertClose(pb.subJune, pb.monthlyBase, 'Anual: subsidio de ferias = 1 mes inteiro (6/6)');
-assertClose(pb.subDec, pb.monthlyBase, 'Anual: subsidio de Natal = 1 mes inteiro (6/6)');
-assertClose(pb.total, round2(pb.monthlyBase*14), 'Anual: total = monthlyBase x14 exatamente');
+assertEqual(pb.n, 12, 'Ano completo: n=12');
+assertClose(pb.subJune, pb.monthlyBase, 'Ano completo: subsidio de ferias = 1 vencimento');
+assertClose(pb.subDec, pb.monthlyBase, 'Ano completo: subsidio de Natal = 1 vencimento');
+assertClose(pb.total, round2(pb.monthlyBase*14), 'Ano completo: total = 14x vencimento');
 
-// Caso 5: Variavel Mar-Ago (6 meses, inclui Junho mas nao Dezembro)
-setPeriod(3,6);                  // Mar-Ago
+// Caso 5: Mar-Ago -- apanha Junho, nao apanha Dezembro
+setPeriod(3,6);
 pb=periodBaseWithSubsidios();
-assertEqual(pb.n, 6, 'Variavel Mar-Ago: n=6');
-assertEqual(pb.firstHalf, 4, 'Variavel Mar-Ago: 4 dos 6 meses Jan-Jun presentes (Mar,Abr,Mai,Jun)');
-assertEqual(pb.hasDecember, false, 'Variavel Mar-Ago: Dezembro nao esta no periodo');
-assertClose(pb.subJune, round2(pb.monthlyBase*4/6), 'Variavel Mar-Ago: subsidio proporcional a 4/6');
-assertEqual(pb.subDec, 0, 'Variavel Mar-Ago: sem subsidio de Natal');
+assertEqual(pb.n, 6, 'Mar-Ago: n=6');
+assertEqual(pb.hasDecember, false, 'Mar-Ago: Dezembro fora do periodo');
+assertClose(pb.subJune, pb.monthlyBase, 'Mar-Ago: subsidio de ferias inteiro (nao 4/6)');
+assertEqual(pb.subDec, 0, 'Mar-Ago: sem subsidio de Natal');
+assertClose(pb.total, round2(pb.monthlyBase*7), 'Mar-Ago: total = 6 meses + 1 subsidio');
 
-// Caso 6 (exemplo do utilizador): so 3 dos 6 meses Jan-Jun trabalhados -> metade do subsidio
-setPeriod(4,3);                  // Abr-Jun
+// Caso 6: Abr-Jun -- 3 meses, subsidio na mesma inteiro (antes dava metade)
+setPeriod(4,3);
 pb=periodBaseWithSubsidios();
-assertEqual(pb.firstHalf, 3, 'Variavel Abr-Jun: 3 dos 6 meses Jan-Jun presentes');
-assertClose(pb.subJune, round2(pb.monthlyBase*0.5), 'Variavel Abr-Jun: 3/6 = metade do subsidio');
+assertEqual(pb.n, 3, 'Abr-Jun: n=3');
+assertClose(pb.subJune, pb.monthlyBase, 'Abr-Jun: subsidio inteiro, nao metade');
+assertClose(pb.total, round2(pb.monthlyBase*4), 'Abr-Jun: total = 3 meses + 1 subsidio');
 
-// Caso 7: a correcao aplica-se a QUALQUER regime, nao so Plena
+// Caso 7: o suplemento de Dedicacao Plena acompanha (a tabela SIM ja o inclui
+// no vencimento do regime, e os subsidios sao vencimentos base)
 setPeriod(1,12);
 document.getElementById('selRegime').value='plena';
 const pbPlena=periodBaseWithSubsidios();
 const supPlena=plenaSupplementOf(pbPlena.total);
 document.getElementById('selRegime').value='geral';
 const pbGeral=periodBaseWithSubsidios();
-const supGeral=plenaSupplementOf(pbGeral.total);
-assertEqual(supGeral, 0, 'Geral: sem suplemento Plena');
+assertEqual(plenaSupplementOf(pbGeral.total), 0, 'Geral: sem suplemento Plena');
 assertEqual(supPlena>0, true, 'Plena: suplemento > 0');
-assertEqual(pbPlena.total>pbGeral.total, true, 'Plena: total (com suplemento de 25%) e maior que Geral');
+assertEqual(pbPlena.total>pbGeral.total, true, 'Plena: total maior que Geral');
+assertClose(pbPlena.total, round2(pbPlena.monthlyBase*14), 'Plena: tambem 14x o seu vencimento');
 
-console.log('OK: periodBaseWithSubsidios() (mensal/anual/variavel, subsidios de ferias/Natal proporcionais) — '+CHECKS_RUN+' assercoes.');
+// baseForMonths() aceita qualquer lista (usado pelo historico)
+assertClose(baseForMonths([{y:2026,m:6}]).total, round2(pbGeral.monthlyBase*2),
+  'baseForMonths([Junho]) = 2x vencimento');
+assertClose(baseForMonths([{y:2026,m:5}]).total, pbGeral.monthlyBase,
+  'baseForMonths([Maio]) = 1x vencimento');
+
+console.log('OK: subsidios de ferias/Natal pagos por inteiro no mes em que caem — '+CHECKS_RUN+' assercoes.');
 `);
