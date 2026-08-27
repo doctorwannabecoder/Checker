@@ -54,6 +54,12 @@ do período a Seg–Dom. Dias úteis sem turno ou descanso são pré-preenchidos
 Rotina; feriados em dia útil como Folga; fins de semana ficam em branco (já são
 dia de descanso). Os dias fora do período contam só para a validação semanal.
 
+Em **Dedicação Plena**, o dia **útil** a seguir a uma **Urgência Noite** (ou 24h) vem
+pré-preenchido como **Bolsa de Horas**, por ser dia de descanso. É uma regra de
+pré-preenchimento, não um valor gravado: muda sozinha nos dois sentidos ao trocar de
+regime, não se aplica a fins de semana nem a feriados, e nunca sobrepõe um dia que
+tenha sido escolhido à mão.
+
 ## Saídas
 
 Os **subsidios de ferias e de Natal** valem **um vencimento base inteiro cada** e

@@ -181,7 +181,7 @@
     </div>
     <div class="row" style="margin-top:10px">
       <label>Categoria <select id="selCategory" onchange="onCategoryChange()"></select></label>
-      <label>Regime <select id="selRegime" onchange="updateWeeklyHint()"></select></label>
+      <label>Regime <select id="selRegime" onchange="onRegimeChange()"></select></label>
       <label class="inline" style="margin-bottom:6px"><span class="small mono" id="salaryHint"></span></label>
     </div>
     <div class="row" style="margin-top:10px">
@@ -250,7 +250,9 @@
     <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> — nos dias úteis R Rotina · T Tarde · F Folga · BH Bolsa de Horas,
       ao fim de semana apenas A Alternativo — e <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h; ao fim de semana
       também P Prevenção 20:00–08:00, que acumula com D mas não com N/24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
-      dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de
+      dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h).
+      Em <b>Dedicação Plena</b>, o dia útil a seguir a uma <b>Urgência Noite</b> vem como <b>Bolsa de Horas</b>
+      (dia de descanso) — volta a Rotina se mudar de regime, e não se aplica a fins de semana nem a feriados. Semana de
       <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
     <div class="row" style="margin:6px 0 12px">
       <label class="inline"><input type="checkbox" id="chkShowPrev" onchange="toggleShowPrev()"/>
@@ -1195,6 +1197,15 @@ function dailyContractHours(){return round2(currentWeekly()/5);} // SUPOSIÇÃO:
 // Categoria / regime -> vencimento base (€/mês) e €/hora (tabela SIM 2026).
 function currentCategory(){return document.getElementById('selCategory').value;}
 function currentRegime(){return document.getElementById('selRegime').value;}
+/* O pré-preenchimento depende do regime (Dedicação Plena), por isso mudar de
+   regime tem de reconstruir o calendário: os dias a seguir a uma Urgência Noite
+   passam a Bolsa de Horas em Plena e voltam a Rotina em Geral/Exclusiva. Os dias
+   que o utilizador escolheu à mão ficam como estão. */
+function onRegimeChange(){
+  updateWeeklyHint();
+  buildCalendar();
+  if(UI.lastResult) calculate();
+}
 function currentSalary(){
   const cat=SALARY_TABLE[currentCategory()]; if(!cat) return {m:0,h:0};
   return cat.regimes[currentRegime()] || cat.regimes[Object.keys(cat.regimes)[0]] || {m:0,h:0};
@@ -1312,10 +1323,31 @@ function toggleShowPrev(){ buildCalendar(); }
 /* Linha de um dia: pré-preenchimento (dia útil -> Rotina; feriado em dia útil
    -> Folga; fim de semana -> nada) com o que o utilizador guardou por cima.
    Usada pelo calendário e pelo cálculo do histórico. */
-function rowForDate(date, inMonth){
+/* Dedicação Plena: o dia a seguir a uma Urgência Noite (ou 24h) é dia de
+   descanso — pré-preenche Bolsa de Horas em vez de Rotina. Só em dias ÚTEIS:
+   fins de semana ficam vazios e feriados ficam Folga, como sempre. */
+function afterErNight(dateISO){
+  const prev=(UI.entries||{})[iso(addDays(parseISO(dateISO),-1))];
+  return !!prev && (prev.banco==='noite' || prev.banco==='h24');
+}
+function defaultWorkFor(date){
   const dow=parseISO(date).getDay();
-  const isWeekendDay=(dow===0||dow===6);
-  const work = isWeekendDay ? '' : (dayKind(date)==='holiday' ? 'folga' : 'rotina');
+  if(dow===0||dow===6) return '';                      // fim de semana
+  if(dayKind(date)==='holiday') return 'folga';        // feriado em dia útil
+  if(currentRegime()==='plena' && afterErNight(date)) return 'bolsa';
+  return 'rotina';
+}
+/* Recalcula o dia SEGUINTE quando ele ainda é derivado (o utilizador não lhe
+   tocou) — usado ao ligar/desligar a Urgência Noite. */
+function refreshDerivedNextDay(dateISO){
+  const nextDate=iso(addDays(parseISO(dateISO),1));
+  if((UI.entries||{})[nextDate]) return;               // escolha do utilizador: não mexer
+  const r=UI.rowByDate[nextDate];
+  if(r) r.work=defaultWorkFor(nextDate);
+}
+
+function rowForDate(date, inMonth){
+  const work=defaultWorkFor(date);
   const kept=(UI.entries||{})[date];
   return kept ? {date, inMonth, work:kept.work||'', banco:kept.banco||'', prev:!!kept.prev}
               : {date, inMonth, work, banco:'', prev:false};
@@ -1645,17 +1677,13 @@ function renderManualCalendar(){
     }
     const isD=(row.banco==='dia'||row.banco==='h24'), isN=(row.banco==='noite'||row.banco==='h24');
     const newD = type==='d' ? !isD : isD, newN = type==='n' ? !isN : isN;
-    const turnedOnNight = (type==='n' && newN && !isN);
     row.banco = newD&&newN ? 'h24' : newD ? 'dia' : newN ? 'noite' : '';
     if(row.banco==='noite'||row.banco==='h24') row.prev=false;   // só a noite colide com P
-    // Dedicação Plena: Urgência N implica descanso no dia seguinte -> muda
-    // automaticamente para Bolsa de Horas (evita o aviso manual anterior).
-    if(turnedOnNight && currentRegime()==='plena'){
-      const nextDate=iso(addDays(parseISO(date),1));
-      const nextRow=UI.rowByDate[nextDate];
-      if(nextRow){ nextRow.work='bolsa'; rememberDay(nextDate); }
-    }
     rememberDay(date);
+    // Dedicação Plena: o dia seguinte passa a Bolsa de Horas (ou volta a Rotina
+    // ao desligar a noite). Fica DERIVADO — não se grava — para poder reverter
+    // sozinho quando se muda de regime.
+    refreshDerivedNextDay(date);
     renderManualCalendar();
   }));
   saveState();

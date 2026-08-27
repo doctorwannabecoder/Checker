@@ -64,6 +64,17 @@ carried deficit closes correctly. `UI.history` is refreshed at the top of
 Never cache a computed total into the saved file: the file holds days only, and the
 history is derived. That is what makes correcting an old day fix the whole year.
 
+## Derived prefill
+
+`defaultWorkFor(date)` decides what an untouched day shows: weekend -> blank,
+weekday holiday -> Folga, and under Dedicacao Plena a weekday following an
+Urgencia Noite/24h -> Bolsa de Horas, else Rotina.
+
+This is deliberately DERIVED, never written to `UI.entries`. That is what lets it
+flip both ways when the regime changes, and what stops it from overwriting a day the
+user picked by hand (a stored entry always wins). Changing the regime calls
+`onRegimeChange()`, which rebuilds the calendar so the rule re-evaluates.
+
 ## Conventions
 
 - UI text and commit messages: Portuguese for user-facing strings, English is fine for commits
