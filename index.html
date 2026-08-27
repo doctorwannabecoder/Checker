@@ -98,6 +98,9 @@
   #shiftsTable td.shiftcell.fds{border-left:4px solid var(--h24)}
   #shiftsTable td.shiftcell.weekday{border-left:4px solid var(--day)}
   #shiftsTable tr.shiftstart td{border-top:2px solid var(--line)}
+  .mcal.hist{opacity:.85}
+  .mcal.hist h3{color:var(--muted)}
+  .mcal.hist table{border-left:3px solid var(--line)}
   #shiftsTable td.daycell{vertical-align:middle;white-space:nowrap;color:var(--muted)}
   #shiftsTable .shifttot{margin-top:6px;font-weight:700;font-size:12px;color:var(--accent2)}
   .catlegend{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);
@@ -197,8 +200,6 @@
       <label>Mês inicial <select id="selStartMonth" onchange="onStartMonthChange()"></select></label>
       <label>Nº de meses <select id="selNumMeses" onchange="onNumMesesChange()"></select></label>
       <label>Ano <input type="number" id="selStartYear" min="2000" max="2100" step="1" style="width:90px" onchange="onStartMonthChange()"/></label>
-      <label>Editar mês já preenchido
-        <select id="selJumpMonth" onchange="jumpToMonth(this)"></select></label>
     </div>
     <div class="row" id="deficitToggleRow" style="margin-top:10px">
       <label class="inline"><input type="checkbox" id="chkDeficit" onchange="toggleDeficit()"/>
@@ -251,6 +252,13 @@
       também P Prevenção 20:00–08:00, que acumula com D mas não com N/24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
       dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h). Semana de
       <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
+    <div class="row" style="margin:6px 0 12px">
+      <label class="inline"><input type="checkbox" id="chkShowPrev" onchange="toggleShowPrev()"/>
+        <span>Mostrar também os <b>meses já preenchidos</b> antes deste período</span></label>
+      <span class="badge" id="prevCount"></span>
+      <span class="small muted">Para corrigir um dia de um mês anterior sem sair daqui.
+        Esses meses <b>não entram</b> no cálculo deste período — continuam a contar pelo histórico.</span>
+    </div>
     <div id="manualCal" style="overflow-x:auto"></div>
   </div>
 
@@ -1102,6 +1110,7 @@ function collectState(){
     selRotinaH:val('selRotinaH'), selTardeH:val('selTardeH'), selExtraH:val('selExtraH'), selBolsaH:val('selBolsaH'),
     selStartMonth:val('selStartMonth'), selNumMeses:val('selNumMeses'), selStartYear:val('selStartYear'),
     chkDeficit:chk('chkDeficit'), inpInitialDeficit:val('inpInitialDeficit'),
+    chkShowPrev:chk('chkShowPrev'),
     chkDL119:chk('chkDL119'), inpDL119PriorHours:val('inpDL119PriorHours'),
     chkDL119LastBlock:chk('chkDL119LastBlock'), chkDL119WeekendConfirm:chk('chkDL119WeekendConfirm'),
     dl119MajBlocks:Array.from(UI.dl119MajBlocks||[]), dl119WeekendConfirmed:!!UI.dl119WeekendConfirmed,
@@ -1142,6 +1151,7 @@ function applyState(saved){
   fillNumMesesOptions();                       // o teto de meses depende do mês inicial
   setVal('selNumMeses', saved.selNumMeses);
   setChk('chkDeficit', saved.chkDeficit); toggleDeficit();
+  setChk('chkShowPrev', saved.chkShowPrev);
   setVal('inpInitialDeficit', saved.inpInitialDeficit);
   setChk('chkDL119', saved.chkDL119);
   setVal('inpDL119PriorHours', saved.inpDL119PriorHours);
@@ -1295,6 +1305,9 @@ function priorAnchorMonth(){
   return {y:py,m:pm};
 }
 function priorAnchorLabel(){ const {y,m}=priorAnchorMonth(); return `${MONTHS_PT[m-1]} de ${y}`; }
+
+function showPrevMonths(){ const e=document.getElementById('chkShowPrev'); return !!(e&&e.checked); }
+function toggleShowPrev(){ buildCalendar(); }
 
 /* Linha de um dia: pré-preenchimento (dia útil -> Rotina; feriado em dia útil
    -> Folga; fim de semana -> nada) com o que o utilizador guardou por cima.
@@ -1476,8 +1489,34 @@ function buildCalendar(){
       d=addDays(d,1);
     }
   });
-  UI.manualRows.sort((a,b)=>a.date.localeCompare(b.date));
   UI.calFirst=UI.periodRanges[0].firstISO; UI.calLast=UI.periodRanges[UI.periodRanges.length-1].lastISO;
+  // Meses já preenchidos ANTES deste período: só aparecem com o interruptor
+  // ligado, e ficam marcados com hist:true para NÃO entrarem no cálculo do
+  // período (continuam a contar através do histórico).
+  UI.histRanges=[];
+  if(showPrevMonths()){
+    historyMonths().forEach(({y,m})=>{
+      const firstISO=`${y}-${String(m).padStart(2,'0')}-01`;
+      const lastISO=`${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y,m)).padStart(2,'0')}`;
+      UI.histRanges.push({y,m,firstISO,lastISO,hist:true});
+      let d=parseISO(firstISO); const end=parseISO(lastISO);
+      while(d<=end){
+        const date=iso(d);
+        if(!UI.rowByDate[date]){
+          const row=rowForDate(date,true); row.hist=true;
+          UI.manualRows.push(row); UI.rowByDate[date]=row;
+        }
+        d=addDays(d,1);
+      }
+    });
+  }
+  UI.calRanges=UI.histRanges.concat(UI.periodRanges);
+  const badge=document.getElementById('prevCount');
+  if(badge){
+    const nPrev=historyMonths().length;
+    badge.textContent = nPrev ? `${nPrev} ${nPrev===1?'mês':'meses'}` : 'nenhum';
+  }
+  UI.manualRows.sort((a,b)=>a.date.localeCompare(b.date));
   renderManualCalendar(); updateWeeklyHint();
 }
 
@@ -1507,7 +1546,9 @@ function weekSummaryCellHtml(weekMonday){
    resumo dessa semana (Output "Resumo semanal" já não precisa de estar
    separado — fica também aqui, ao lado, depois de calcular). */
 function renderManualCalendar(){
-  const host=document.getElementById('manualCal'); if(!host || !UI.periodRanges || !UI.periodRanges.length) return;
+  const host=document.getElementById('manualCal');
+  const ranges=(UI.calRanges&&UI.calRanges.length)?UI.calRanges:UI.periodRanges;
+  if(!host || !ranges || !ranges.length) return;
   const DOW=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
   const monthsPT=MONTHS_PT;
   // Trabalho normal: tick único (só um tipo por dia) — à semelhança do banco.
@@ -1536,7 +1577,7 @@ function renderManualCalendar(){
   const legendTd=`<td class="legend"><div class="legend-row">Dia</div><div class="legend-row">Trab.</div><div class="legend-row">Urgência</div></td>`;
 
   // blocos = exatamente os meses escolhidos (UI.periodRanges), na ordem em que já vêm (cronológica)
-  const blocksMeta=UI.periodRanges;
+  const blocksMeta=ranges;
   const blockWeeks=blocksMeta.map(bm=>({wStart:mondayOfWeek(bm.firstISO), wEnd:sundayOfWeek(bm.lastISO)}));
   // dono de uma data: primeiro o bloco cujo PRÓPRIO mês a contém; se for uma
   // data de fronteira (fora de todos os meses escolhidos), o dono passa a ser
@@ -1579,13 +1620,12 @@ function renderManualCalendar(){
       }
       rows+=`<tr>${legendTd}${tds}<td class="weeksum">${weekSummaryCellHtml(weekMonday)}</td></tr>`;
     }
-    return `<div class="mcal"><h3>${monthsPT[bm.m-1]} ${bm.y}</h3>
+    return `<div class="mcal${bm.hist?' hist':''}"><h3>${monthsPT[bm.m-1]} ${bm.y}${bm.hist?' <span class="badge">já preenchido · fora deste período</span>':''}</h3>
       <table><colgroup><col class="legendcol">${DOW.map(()=>'<col class="daycol">').join('')}<col class="weekcol"></colgroup>
       <thead><tr><th class="legendcol"></th>${DOW.map(x=>`<th>${x}</th>`).join('')}<th class="weekcol">Semana</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;
   });
   host.innerHTML=blocks.join('');
-  fillJumpMonths();
   host.querySelectorAll('.work-btn').forEach(btn=>btn.addEventListener('click',e=>{
     const wrap=btn.parentElement, date=wrap.dataset.d, key=btn.dataset.k;
     const row=UI.rowByDate[date]; if(!row) return;
@@ -1627,7 +1667,8 @@ function renderManualCalendar(){
    workType/bancoType identificam o tick escolhido (ex.: 'rotina', 'noite') —
    usados nas validações por regime. */
 function collectEntries(){
-  return UI.manualRows.filter(r=>r.work||r.banco||r.prev).map(entryFromRow);
+  // r.hist = mês anterior mostrado só para edição — não pertence a este período.
+  return UI.manualRows.filter(r=>!r.hist && (r.work||r.banco||r.prev)).map(entryFromRow);
 }
 /* Uma linha do calendário -> uma entrada para o motor. */
 function entryFromRow(r){
@@ -2126,39 +2167,6 @@ function toggleDL119Block(n){
 function toast(msg,err){const t=document.createElement('div');t.textContent=msg;
   t.style.cssText=`position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:${err?'var(--err)':'var(--ok)'};color:#06283b;padding:10px 18px;border-radius:10px;font-weight:700;z-index:99`;
   document.body.appendChild(t);setTimeout(()=>t.remove(),1800);}
-
-/* Saltar direto para um mes ja preenchido, para corrigir la um dia sem andar a
-   mexer no "Mes inicial"/"Nº de meses". A lista sai de UI.entries, por isso
-   inclui meses fora do periodo atual. */
-function fillJumpMonths(){
-  const sel=document.getElementById('selJumpMonth'); if(!sel) return;
-  const set={};
-  Object.keys(UI.entries||{}).forEach(d=>{ set[d.slice(0,7)]=true; });
-  const keys=Object.keys(set).sort();
-  const atual=(selectedMonths()[0]||{});
-  const atualKey=atual.y?`${atual.y}-${String(atual.m).padStart(2,'0')}`:'';
-  // Sempre visível — desativado enquanto não houver meses preenchidos, para que
-  // se perceba que a opção existe antes de haver dados.
-  sel.innerHTML = keys.length
-    ? '<option value="">— escolher mês —</option>'+
-      keys.map(k=>{
-        const y=k.slice(0,4), m=+k.slice(5,7);
-        const aqui=(k===atualKey && numMeses()===1)?' ✓ (a editar)':'';
-        return `<option value="${k}">${MONTHS_PT[m-1]} ${y}${aqui}</option>`;
-      }).join('')
-    : '<option value="">(ainda sem meses preenchidos)</option>';
-  sel.disabled=!keys.length;
-  sel.value='';
-}
-function jumpToMonth(sel){
-  const v=sel&&sel.value; if(!v) return;
-  const sy=document.getElementById('selStartYear'), sm=document.getElementById('selStartMonth');
-  if(sy) sy.value=v.slice(0,4);
-  if(sm) sm.value=String(+v.slice(5,7));
-  fillNumMesesOptions();
-  const nm=document.getElementById('selNumMeses'); if(nm) nm.value='1';
-  updatePeriodAvailability(); buildCalendar(); calculate();
-}
 
 /* ---- exportar / importar ficheiro ----
    O ficheiro é o mesmo objeto que vai para o localStorage, por isso leva também

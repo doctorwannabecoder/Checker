@@ -154,10 +154,12 @@ Os meses anteriores nao ficam so guardados: sao **recalculados** e usados para
   historico, o periodo selecionado e o **acumulado**.
 
 Para **corrigir um mes ja preenchido** nao e preciso andar a mexer no "Mes inicial"
-e no "Nº de meses": a lista **"Editar mes ja preenchido"**, no **Ponto 2** ao lado do
-Mes inicial, salta direto para qualquer mes que ja tenha dias preenchidos (o mes
-que esta a ser mostrado aparece marcado com ✓). Enquanto nao houver nada
-preenchido, a lista aparece desativada. Como o historico e recalculado,
+e no "Nº de meses": no **Ponto 4** ha um interruptor **"Mostrar tambem os meses ja
+preenchidos antes deste periodo"**. Desligado (por defeito) so se ve o periodo
+selecionado; ligado, os meses anteriores aparecem por baixo, marcados como *ja
+preenchido · fora deste periodo*, e podem ser corrigidos ali mesmo. Esses meses
+**nao entram** no calculo do periodo — continuam a contar pelo historico, que se
+atualiza quando se volta a calcular. Como o historico e recalculado,
 a correcao reflete-se logo no acumulado.
 
 Isto e o que faz com que preencher mes a mes de o **mesmo total** que preencher o
