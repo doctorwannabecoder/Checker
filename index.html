@@ -140,7 +140,9 @@
   .banco-btn.banco-d.active{background:var(--day);border-color:var(--day);color:#06283b}
   .banco-btn.banco-n.active{background:var(--night);border-color:var(--night);color:#fff}
   .banco-btn.banco-p.active{background:var(--prev);border-color:var(--prev);color:#06283b}
-  .work-btn:hover,.banco-btn:hover{border-color:var(--accent2)}
+  .work-btn:hover:not(:disabled),.banco-btn:hover{border-color:var(--accent2)}
+  .work-btn:disabled{cursor:not-allowed;opacity:.4}
+  .work-btn.active:disabled{opacity:1}
   .mcal td.weeksum{background:#0b1220;font-size:11px;line-height:1.6;vertical-align:middle}
   .mcal td.weeksum b{color:var(--text)}
   .mcal td.weeksum .muted{color:var(--muted)}
@@ -252,8 +254,8 @@
       e nos feriados também P Prevenção 20:00–08:00, que acumula com D mas não com N/24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
       dia (sobrepõem-se). O <b>A</b> começa às 08:00 e é sempre pago como <b>Extra</b>, mesmo que a semana não complete o horário.
       Os dias úteis vêm pré-preenchidos com <b>Rotina</b>. Um feriado em dia útil conta <b>8h</b> para o horário da semana, e o turno escolhido nesse dia é pago como Extra.
-      Em <b>Dedicação Plena</b>, o dia útil a seguir a uma <b>Urgência Noite</b> vem como <b>Bolsa de Horas</b>
-      (dia de descanso) — volta a Rotina se mudar de regime, e não se aplica a fins de semana nem a feriados. Semana de
+      Em qualquer regime, o dia útil a seguir a uma <b>Urgência Noite</b> (ou 24h) fica em <b>Bolsa de Horas</b>, bloqueado —
+      volta ao normal se desligar a noite, e não se aplica a fins de semana nem a feriados. Semana de
       <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
     <div class="row" style="margin:6px 0 12px">
       <label class="inline"><input type="checkbox" id="chkShowPrev" onchange="toggleShowPrev()"/>
@@ -1106,7 +1108,11 @@ function daysInMonth(y,m){return new Date(y,m,0).getDate();}
 let UI = { manualRows:[], entries:{}, lastResult:null, dl119MajBlocks:new Set(), dl119WeekendConfirmed:false };
 function rememberDay(date){
   const r=UI.rowByDate&&UI.rowByDate[date]; if(!r) return;
-  UI.entries[date]={work:r.work||'', banco:r.banco||'', prev:!!r.prev};
+  // BH bloqueado não é uma escolha: guarda-se o que o dia era, para voltar a
+  // isso se a noite da véspera for desligada.
+  const kept=UI.entries[date];
+  const work=isLockedBolsa(date) ? (kept?kept.work:'rotina') : (r.work||'');
+  UI.entries[date]={work, banco:r.banco||'', prev:!!r.prev};
 }
 
 /* =========================================================================
@@ -1219,10 +1225,6 @@ function dailyContractHours(){return round2(currentWeekly()/5);} // SUPOSIÇÃO:
 // Categoria / regime -> vencimento base (€/mês) e €/hora (tabela SIM 2026).
 function currentCategory(){return document.getElementById('selCategory').value;}
 function currentRegime(){return document.getElementById('selRegime').value;}
-/* O pré-preenchimento depende do regime (Dedicação Plena), por isso mudar de
-   regime tem de reconstruir o calendário: os dias a seguir a uma Urgência Noite
-   passam a Bolsa de Horas em Plena e voltam a Rotina em Geral/Exclusiva. Os dias
-   que o utilizador escolheu à mão ficam como estão. */
 function onRegimeChange(){
   updateWeeklyHint();
   buildCalendar();
@@ -1345,31 +1347,37 @@ function toggleShowPrev(){ buildCalendar(); }
 /* Linha de um dia: pré-preenchimento (dia útil -> Rotina; feriado e fim de
    semana -> nada) com o que o utilizador guardou por cima.
    Usada pelo calendário e pelo cálculo do histórico. */
-/* Dedicação Plena: o dia a seguir a uma Urgência Noite (ou 24h) é dia de
-   descanso — pré-preenche Bolsa de Horas em vez de Rotina. Só em dias ÚTEIS:
-   fins de semana e feriados ficam vazios, como sempre. */
+/* O dia a seguir a uma Urgência Noite (ou 24h) é dia de descanso: em qualquer
+   regime fica em Bolsa de Horas, bloqueado. Só em dias ÚTEIS: fins de semana e
+   feriados ficam vazios, como sempre. */
 function afterErNight(dateISO){
   const prev=(UI.entries||{})[iso(addDays(parseISO(dateISO),-1))];
   return !!prev && (prev.banco==='noite' || prev.banco==='h24');
 }
+function isLockedBolsa(dateISO){ return !isRestDate(dateISO) && afterErNight(dateISO); }
 function defaultWorkFor(date){
   if(isRestDate(date)) return '';                      // fim de semana ou feriado
-  if(currentRegime()==='plena' && afterErNight(date)) return 'bolsa';
   return 'rotina';
+}
+/* Trabalho normal de um dia: o bloqueio ganha a tudo, depois o que o
+   utilizador guardou, por fim o pré-preenchimento. */
+function workForDate(date){
+  if(isLockedBolsa(date)) return 'bolsa';
+  const kept=(UI.entries||{})[date];
+  return kept ? (kept.work||'') : defaultWorkFor(date);
 }
 /* Recalcula o dia SEGUINTE quando ele ainda é derivado (o utilizador não lhe
    tocou) — usado ao ligar/desligar a Urgência Noite. */
 function refreshDerivedNextDay(dateISO){
   const nextDate=iso(addDays(parseISO(dateISO),1));
-  if((UI.entries||{})[nextDate]) return;               // escolha do utilizador: não mexer
   const r=UI.rowByDate[nextDate];
-  if(r) r.work=defaultWorkFor(nextDate);
+  if(r) r.work=workForDate(nextDate);
 }
 
 function rowForDate(date, inMonth){
-  const work=defaultWorkFor(date);
+  const work=workForDate(date);
   const kept=(UI.entries||{})[date];
-  return kept ? {date, inMonth, work:kept.work||'', banco:kept.banco||'', prev:!!kept.prev}
+  return kept ? {date, inMonth, work, banco:kept.banco||'', prev:!!kept.prev}
               : {date, inMonth, work, banco:'', prev:false};
 }
 
@@ -1609,9 +1617,11 @@ function renderManualCalendar(){
   // Trabalho normal: tick único (só um tipo por dia) — à semelhança do banco.
   const WORK_TOGGLE_LABELS={rotina:'R',tarde:'T',extra:'A',folga:'F',bolsa:'BH'};
   const workToggles=(date,sel)=>{
+    const locked=isLockedBolsa(date);
     const btns=allowedWorkTypes(date).map(k=>{
       const v=WORK_TYPES[k];
-      return `<button type="button" class="work-btn${sel===k?' active':''}" data-k="${k}" title="${v.label} (${v.hours()}h)">${WORK_TOGGLE_LABELS[k]}</button>`;
+      const title=locked?'Bloqueado: dia a seguir a Urgência Noite':`${v.label} (${v.hours()}h)`;
+      return `<button type="button" class="work-btn${sel===k?' active':''}" data-k="${k}" title="${title}"${locked?' disabled':''}>${WORK_TOGGLE_LABELS[k]}</button>`;
     }).join('');
     return `<div class="work-toggles" data-d="${date}">${btns}</div>`;
   };
@@ -1683,7 +1693,7 @@ function renderManualCalendar(){
   host.innerHTML=blocks.join('');
   host.querySelectorAll('.work-btn').forEach(btn=>btn.addEventListener('click',e=>{
     const wrap=btn.parentElement, date=wrap.dataset.d, key=btn.dataset.k;
-    const row=UI.rowByDate[date]; if(!row) return;
+    const row=UI.rowByDate[date]; if(!row || isLockedBolsa(date)) return;
     row.work = (row.work===key) ? '' : key;
     rememberDay(date);
     renderManualCalendar();
@@ -1696,6 +1706,7 @@ function renderManualCalendar(){
       // P ocupa a noite: incompatível com N e com 24h, compatível com D.
       if(row.prev){ if(row.banco==='noite') row.banco=''; else if(row.banco==='h24') row.banco='dia'; }
       rememberDay(date);
+      refreshDerivedNextDay(date);   // a noite pode ter sido desligada
       renderManualCalendar(); return;
     }
     const isD=(row.banco==='dia'||row.banco==='h24'), isN=(row.banco==='noite'||row.banco==='h24');
@@ -1703,9 +1714,8 @@ function renderManualCalendar(){
     row.banco = newD&&newN ? 'h24' : newD ? 'dia' : newN ? 'noite' : '';
     if(row.banco==='noite'||row.banco==='h24') row.prev=false;   // só a noite colide com P
     rememberDay(date);
-    // Dedicação Plena: o dia seguinte passa a Bolsa de Horas (ou volta a Rotina
-    // ao desligar a noite). Fica DERIVADO — não se grava — para poder reverter
-    // sozinho quando se muda de regime.
+    // O dia seguinte passa a Bolsa de Horas bloqueada, ou volta ao que era ao
+    // desligar a noite. Fica DERIVADO — não se grava.
     refreshDerivedNextDay(date);
     renderManualCalendar();
   }));

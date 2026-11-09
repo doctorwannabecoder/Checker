@@ -66,16 +66,15 @@ history is derived. That is what makes correcting an old day fix the whole year.
 
 ## Derived prefill
 
-`defaultWorkFor(date)` decides what an untouched day shows: weekend or holiday ->
-blank, and under Dedicacao Plena a weekday following an Urgencia Noite/24h -> Bolsa
-de Horas, else Rotina. A weekday holiday still credits 8h to the week's contract
+`workForDate(date)` decides what a day shows. In every regime, a weekday following
+an Urgencia Noite/24h is locked to Bolsa de Horas (`isLockedBolsa`), overriding any
+stored value; otherwise a stored entry wins, then `defaultWorkFor` (weekend or
+holiday -> blank, else Rotina). A weekday holiday still credits 8h to the week's contract
 (`PAYROLL_RULES.holidayContractCredit`, applied in `entryFromRow`), and any shift
 picked on it is paid entirely as extra.
 
-This is deliberately DERIVED, never written to `UI.entries`. That is what lets it
-flip both ways when the regime changes, and what stops it from overwriting a day the
-user picked by hand (a stored entry always wins). Changing the regime calls
-`onRegimeChange()`, which rebuilds the calendar so the rule re-evaluates.
+The lock is deliberately DERIVED, never written to `UI.entries`: `rememberDay` stores
+what the day was before it, so switching the night off restores that value.
 
 ## Conventions
 

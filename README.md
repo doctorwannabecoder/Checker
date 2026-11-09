@@ -56,11 +56,10 @@ Rotina; feriados e fins de semana ficam em branco. Um feriado em dia útil abate
 sempre 8h ao horário da semana, e o turno escolhido nesse dia é todo pago como
 Extra. Os dias fora do período contam só para a validação semanal.
 
-Em **Dedicação Plena**, o dia **útil** a seguir a uma **Urgência Noite** (ou 24h) vem
-pré-preenchido como **Bolsa de Horas**, por ser dia de descanso. É uma regra de
-pré-preenchimento, não um valor gravado: muda sozinha nos dois sentidos ao trocar de
-regime, não se aplica a fins de semana nem a feriados, e nunca sobrepõe um dia que
-tenha sido escolhido à mão.
+Em qualquer regime, o dia **útil** a seguir a uma **Urgência Noite** (ou 24h) fica em
+**Bolsa de Horas**, bloqueado, por ser dia de descanso. É uma regra derivada, não um
+valor gravado: não se aplica a fins de semana nem a feriados, e se a noite for
+desligada o dia volta ao que era.
 
 ## Saídas
 
