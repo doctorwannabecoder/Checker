@@ -66,9 +66,11 @@ history is derived. That is what makes correcting an old day fix the whole year.
 
 ## Derived prefill
 
-`defaultWorkFor(date)` decides what an untouched day shows: weekend -> blank,
-weekday holiday -> Folga, and under Dedicacao Plena a weekday following an
-Urgencia Noite/24h -> Bolsa de Horas, else Rotina.
+`defaultWorkFor(date)` decides what an untouched day shows: weekend or holiday ->
+blank, and under Dedicacao Plena a weekday following an Urgencia Noite/24h -> Bolsa
+de Horas, else Rotina. A weekday holiday still credits 8h to the week's contract
+(`PAYROLL_RULES.holidayContractCredit`, applied in `entryFromRow`), and any shift
+picked on it is paid entirely as extra.
 
 This is deliberately DERIVED, never written to `UI.entries`. That is what lets it
 flip both ways when the regime changes, and what stops it from overwriting a day the

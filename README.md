@@ -25,10 +25,11 @@ A aplicação está organizada em quatro pontos:
    horizontal, Segunda a Domingo). Cada dia tem duas linhas:
    - **Trabalho normal**, com as opções que se aplicam ao dia: nos dias úteis
      `R` Rotina · `T` Tarde · `F` Folga · `BH` Bolsa de Horas; ao fim de semana
-     apenas `A` Alternativo.
+     e nos feriados apenas `A` Alternativo, que começa às 08:00 e é sempre pago
+     como Extra, mesmo que a semana não complete o horário.
    - **Urgência**: `D` Dia (08:00–20:00) · `N` Noite (20:00–08:00) · `D+N` = 24h.
-     Ao fim de semana junta-se `P` **Prevenção** (20:00–08:00), que acumula com
-     `D` — são janelas distintas — mas não com `N` nem com 24h.
+     Ao fim de semana e nos feriados junta-se `P` **Prevenção** (20:00–08:00), que
+     acumula com `D` — são janelas distintas — mas não com `N` nem com 24h.
 
 Depois, **Calcular pagamento**.
 
@@ -51,8 +52,9 @@ onde transitar), as horas ER prévias do DL 119 são ignoradas, e o Output 2
 
 Para os cálculos semanais de ER/TN, a app **estende cada semana de fronteira**
 do período a Seg–Dom. Dias úteis sem turno ou descanso são pré-preenchidos como
-Rotina; feriados em dia útil como Folga; fins de semana ficam em branco (já são
-dia de descanso). Os dias fora do período contam só para a validação semanal.
+Rotina; feriados e fins de semana ficam em branco. Um feriado em dia útil abate
+sempre 8h ao horário da semana, e o turno escolhido nesse dia é todo pago como
+Extra. Os dias fora do período contam só para a validação semanal.
 
 Em **Dedicação Plena**, o dia **útil** a seguir a uma **Urgência Noite** (ou 24h) vem
 pré-preenchido como **Bolsa de Horas**, por ser dia de descanso. É uma regra de

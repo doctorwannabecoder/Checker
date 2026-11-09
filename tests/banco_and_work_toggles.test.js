@@ -15,7 +15,7 @@ assertEqual(/<button[^>]*class="banco-btn banco-n[^"]*"[^>]*>N</.test(html), tru
 assertEqual(!html.includes('class="banco"'), true, 'ja NAO contem o antigo select.banco');
 
 // --- D/N/H24: estados corretos e independentes ---
-const target=UI.manualRows.find(r=>r.inMonth);
+const target=UI.manualRows.find(r=>r.inMonth && dayKind(r.date)==='weekday');
 target.banco='dia'; renderManualCalendar();
 html=document.getElementById('manualCal').innerHTML;
 assertEqual(html.includes('banco-d active'), true, 'Banco Dia sozinho: D fica active');

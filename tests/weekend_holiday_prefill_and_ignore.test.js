@@ -21,13 +21,13 @@ const sat=UI.rowByDate['2026-05-02'];
 function checkIgnored(key, shouldBeIgnored, label){
   sat.work=key;
   const e=collectEntries().find(x=>x.date==='2026-05-02');
-  const ignored=!e || e.regularHours===0;
+  const ignored=!e || (e.regularHours===0 && e.alternativeHours===0);
   assertEqual(ignored, shouldBeIgnored, label);
 }
 checkIgnored('rotina', true, 'Sabado com Rotina: ignorado (0h)');
 checkIgnored('tarde', true, 'Sabado com Tarde: ignorado (0h)');
 checkIgnored('bolsa', true, 'Sabado com Bolsa de Horas: ignorado (0h)');
-checkIgnored('extra', false, 'Sabado com Alternativo: NAO ignorado (sem regra ainda)');
+checkIgnored('extra', false, 'Sabado com Alternativo: NAO ignorado (pago como extra)');
 checkIgnored('folga', true, 'Sabado com Folga: ignorado (fim de semana so aceita A)');
 
 // Dia util normal (Segunda) nunca e ignorado

@@ -49,8 +49,8 @@ const vespera=iso(addDays(parseISO(feriado),-1));
 setPeriod(parseISO(feriado).getMonth()+1,1);
 if(UI.rowByDate[vespera]){ UI.rowByDate[vespera].banco='noite'; rememberDay(vespera); }
 buildCalendar();
-assertEqual(UI.rowByDate[feriado].work, 'folga',
-  'feriado a seguir a noite continua Folga (a regra nao se aplica)');
+assertEqual(UI.rowByDate[feriado].work, '',
+  'feriado a seguir a noite continua vazio (a regra nao se aplica)');
 
 /* --- nunca sobrepoe uma escolha do utilizador --- */
 setPeriod(5,1);

@@ -34,7 +34,7 @@ document.getElementById('selStartMonth').value='5';
 document.getElementById('selStartYear').value='2026';
 updatePeriodAvailability();
 buildCalendar();
-const target=UI.manualRows.find(r=>r.inMonth && parseISO(r.date).getDay()>=1 && parseISO(r.date).getDay()<=5);
+const target=UI.manualRows.find(r=>r.inMonth && dayKind(r.date)==='weekday');
 
 target.work='rotina'; target.banco='dia';
 let e=collectEntries().find(x=>x.date===target.date);

@@ -24,11 +24,11 @@ assertEqual(UI.periodRanges[0].firstISO, '2026-01-01', 'Jan+12: comeca a 1 de Ja
 assertEqual(UI.periodRanges[11].lastISO, '2026-12-31', 'Jan+12: termina a 31 de Dezembro');
 const anualRows=UI.manualRows.filter(r=>r.inMonth);
 assertEqual(anualRows.length, 365, 'Jan+12 em 2026 (nao bissexto): 365 dias');
-// prefill: dia util sem feriado=Rotina; feriado em dia util=Folga; fim de semana=vazio
+// prefill: dia util sem feriado=Rotina; feriado e fim de semana=vazio
 const weekdayNonHoliday=anualRows.filter(r=>dayKind(r.date)==='weekday');
 assertEqual(weekdayNonHoliday.every(r=>r.work==='rotina'), true, 'dias uteis sem feriado -> Rotina');
 const weekdayHoliday=anualRows.filter(r=>{const dow=parseISO(r.date).getDay(); return dayKind(r.date)==='holiday'&&dow!==0&&dow!==6;});
-assertEqual(weekdayHoliday.every(r=>r.work==='folga'), true, 'feriados em dia util -> Folga');
+assertEqual(weekdayHoliday.every(r=>r.work===''), true, 'feriados em dia util -> sem prefill');
 const anyWeekend=anualRows.filter(r=>{const dow=parseISO(r.date).getDay(); return dow===0||dow===6;});
 assertEqual(anyWeekend.every(r=>r.work===''), true, 'qualquer fim de semana (mesmo feriado) -> sem prefill');
 

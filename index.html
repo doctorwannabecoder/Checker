@@ -248,9 +248,10 @@
   <div class="card">
     <h2>4 · Entrada</h2>
     <p class="small">Cada dia tem duas listas: <b>trabalho normal</b> — nos dias úteis R Rotina · T Tarde · F Folga · BH Bolsa de Horas,
-      ao fim de semana apenas A Alternativo — e <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h; ao fim de semana
-      também P Prevenção 20:00–08:00, que acumula com D mas não com N/24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
-      dia (sobrepõem-se). Os dias úteis vêm pré-preenchidos com <b>Rotina</b>, os feriados com <b>Folga</b> (8h).
+      ao fim de semana e nos feriados apenas A Alternativo — e <b>urgência</b> (D Dia 08:00–20:00 · N Noite 20:00–08:00 · D+N = 24h; ao fim de semana
+      e nos feriados também P Prevenção 20:00–08:00, que acumula com D mas não com N/24h). Selecionar <b>Urgência D</b> ignora o trabalho normal desse
+      dia (sobrepõem-se). O <b>A</b> começa às 08:00 e é sempre pago como <b>Extra</b>, mesmo que a semana não complete o horário.
+      Os dias úteis vêm pré-preenchidos com <b>Rotina</b>. Um feriado em dia útil conta <b>8h</b> para o horário da semana, e o turno escolhido nesse dia é pago como Extra.
       Em <b>Dedicação Plena</b>, o dia útil a seguir a uma <b>Urgência Noite</b> vem como <b>Bolsa de Horas</b>
       (dia de descanso) — volta a Rotina se mudar de regime, e não se aplica a fins de semana nem a feriados. Semana de
       <b>Segunda a Domingo</b>; a cinzento os dias fora do mês.</p>
@@ -384,6 +385,13 @@ const PAYROLL_RULES = {
   // Janela da Prevenção. É própria — independente do turno de banco do mesmo
   // dia — para que Banco Dia + Prevenção possam coexistir.
   preventionWindow: { start:'20:00', end:'08:00', confirm:false },
+  // Alternativo (A): só tem nº de horas; assume-se início às 08:00. Ao Sábado o
+  // preço reparte-se às 13:00 (saturdaySplitHour), como qualquer turno.
+  // CONFIRMADO pelo utilizador.
+  alternativeWindow: { start:'08:00', confirm:false },
+  // Feriado em dia útil: abate estas horas ao contrato da semana, haja ou não
+  // turno nesse dia, e o turno escolhido é todo extra. CONFIRMADO pelo utilizador.
+  holidayContractCredit: { hours:8, confirm:false },
 
   /* CATEGORIAS DE PAGAMENTO — key -> {code, desc, isER, isTN, confirm}
      `code` = etiqueta curta (mostrada na coluna "Categoria"); `desc` = descrição completa. */
@@ -710,7 +718,7 @@ function computeEntry(entry, ctx, contractRem){
   let dayRows=[], endDate=date;
   let contractRemAfter=(typeof contractRem==='number')?contractRem:Infinity;
 
-  // 1) Trabalho normal do dia (Rotina/Tarde/Extra/Bolsa/Folga) — pago pela
+  // 1) Trabalho normal do dia (Rotina/Tarde/Bolsa/Folga) — pago pela
   //    base. NOTA: já NÃO consome aqui o `contractRem` recebido — esse valor
   //    chega de computeMonth já líquido do total de horas normais da SEMANA
   //    INTEIRA (calculado antecipadamente), para que o resultado do turno de
@@ -720,20 +728,17 @@ function computeEntry(entry, ctx, contractRem){
 
   // Banco Dia (08:00–20:00) no MESMO dia que trabalho normal não faz sentido
   // (sobrepõem-se) — nunca é ignorado silenciosamente, fica assinalado.
-  if(entry.er && regH>0 && entry.start==='08:00' && entry.end==='20:00'){
+  if(entry.er && regH>0 && !entry.holidayCredit && entry.start==='08:00' && entry.end==='20:00'){
     const wt=WORK_TYPES[entry.workType];
     warnings.push({type:'err',msg:`${date}: Banco Dia (08:00–20:00) não pode coexistir com ${wt?wt.label:'trabalho normal'} no mesmo dia — escolha um dos dois.`});
   }
 
-  // 2) Turno de banco (ER)
-  if(entry.er && durMin>0 && startMin!=null){
-    const shiftH=durMin/60;
-    const avail=(contractRemAfter===Infinity)?0:Math.max(0,contractRemAfter);
-    const contractFillH=Math.min(shiftH, avail);
-    const contractFillMin=Math.round(contractFillH*60);
-    if(contractRemAfter!==Infinity) contractRemAfter=contractRemAfter-contractFillH;
-    const cls=classifyErShift(date,startMin,durMin,contractFillMin);
-    // ER (extraordinário) → código + € (€/hora × multiplicador)
+  // Repartição por dia real (Output 2): mesmas horas e mesmos valores dos
+  // totais, apenas agrupados pelo dia a que cada minuto pertence.
+  const dayMap={};
+  const pushDay=(rd,alloc)=>{ (dayMap[rd]=dayMap[rd]||[]).push(alloc); };
+  // ER (extraordinário) → código + € (€/hora × multiplicador)
+  const addErMinutes=cls=>{
     Object.entries(cls.erMin).forEach(([k,mins])=>{
       const [cat,seg,order]=k.split('|');
       const key=CODE_MATRIX[cat] && CODE_MATRIX[cat][seg] ? CODE_MATRIX[cat][seg][order] : null;
@@ -743,17 +748,6 @@ function computeEntry(entry, ctx, contractRem){
       addAlloc(allocMap, key, h, eur, {mult});
       if(seg==='not') erNightH+=h; else erDayH+=h; erEur+=eur;
     });
-    // TN → suplemento noturno sobre horas de contrato
-    Object.entries(cls.tnMin).forEach(([cat,mins])=>{
-      const h=mins/60, eur=h*hourly*TN_UPLIFT.pct;
-      addAlloc(allocMap, TN_MATRIX[cat]||'TN_DU', h, eur, {mult:TN_UPLIFT.pct});
-      tnH+=h; tnEur+=eur;
-    });
-    Object.values(cls.contractDayMin).forEach(mins=>{ contractDayH+=mins/60; });
-    // Repartição por dia real (Output 2): mesmas horas e mesmos valores dos
-    // totais acima, apenas agrupados pelo dia a que cada minuto pertence.
-    const dayMap={};
-    const pushDay=(rd,alloc)=>{ (dayMap[rd]=dayMap[rd]||[]).push(alloc); };
     Object.entries(cls.erMinDay).forEach(([dk,mins])=>{
       const [rd,cat,seg,order]=dk.split('|');
       const key=CODE_MATRIX[cat] && CODE_MATRIX[cat][seg] ? CODE_MATRIX[cat][seg][order] : null;
@@ -761,21 +755,48 @@ function computeEntry(entry, ctx, contractRem){
       const h=mins/60;
       pushDay(rd, makeAlloc(key, h, h*hourly*mult, {mult}));
     });
+  };
+
+  // 2) Turno de banco (ER)
+  if(entry.er && durMin>0 && startMin!=null){
+    const shiftH=durMin/60;
+    // Feriado em dia útil: o contrato já foi abatido pelo crédito do feriado,
+    // por isso o turno é todo extra.
+    const avail=(contractRemAfter===Infinity||entry.holidayCredit)?0:Math.max(0,contractRemAfter);
+    const contractFillH=Math.min(shiftH, avail);
+    const contractFillMin=Math.round(contractFillH*60);
+    if(contractRemAfter!==Infinity) contractRemAfter=contractRemAfter-contractFillH;
+    const cls=classifyErShift(date,startMin,durMin,contractFillMin);
+    addErMinutes(cls);
+    // TN → suplemento noturno sobre horas de contrato
+    Object.entries(cls.tnMin).forEach(([cat,mins])=>{
+      const h=mins/60, eur=h*hourly*TN_UPLIFT.pct;
+      addAlloc(allocMap, TN_MATRIX[cat]||'TN_DU', h, eur, {mult:TN_UPLIFT.pct});
+      tnH+=h; tnEur+=eur;
+    });
+    Object.values(cls.contractDayMin).forEach(mins=>{ contractDayH+=mins/60; });
     Object.entries(cls.tnMinDay).forEach(([dk,mins])=>{
       const [rd,cat]=dk.split('|');
       const h=mins/60;
       pushDay(rd, makeAlloc(TN_MATRIX[cat]||'TN_DU', h, h*hourly*TN_UPLIFT.pct, {mult:TN_UPLIFT.pct}));
     });
-    dayRows=Object.keys(dayMap).sort().map(d=>({
-      date:d,
-      allocations:dayMap[d].sort((a,b)=>String(a.code).localeCompare(String(b.code)))
-    }));
     // Último dia tocado pelo turno — o Output 2 mostra um intervalo quando o
     // turno atravessa a meia-noite.
     endDate=iso(addDays(parseISO(date), Math.floor((startMin+durMin-1)/1440)));
   } else if(entry.er && durMin>0){
     warnings.push({type:'warn',msg:`${date}: ER sem início/fim — defina as horas para repartir contrato/extraordinário e diurno/noturno.`});
   }
+
+  // 2-bis) Alternativo (A): sempre extra, mesmo que a semana não complete o
+  //    contrato — não consome contractRem e usa a mesma classificação do ER.
+  const altH=(typeof entry.alternativeHours==='number'&&entry.alternativeHours>0)?entry.alternativeHours:0;
+  const altStartMin=timeToMin(PAYROLL_RULES.alternativeWindow.start);
+  if(altH>0) addErMinutes(classifyErShift(date,altStartMin,Math.round(altH*60),0));
+
+  dayRows=Object.keys(dayMap).sort().map(d=>({
+    date:d,
+    allocations:dayMap[d].sort((a,b)=>String(a.code).localeCompare(String(b.code)))
+  }));
 
   // 3) Prevenção — INDEPENDENTE do turno de banco (um dia pode ter Banco Dia
   //    08:00–20:00 e Prevenção 20:00–08:00). Usa janela própria, por isso não
@@ -827,7 +848,8 @@ function computeEntry(entry, ctx, contractRem){
   return {
     date, kind, isFds, weekday:weekdayName(date), holiday:kind==='holiday'?holidayName(date):'',
     start:startMin!=null?minToHHMM(startMin):'', end:endMin!=null?minToHHMM(endMin):'',
-    isER:!!entry.er, isPrev:!!entry.prevention, prevH:round2(prevH),
+    isER:!!entry.er||altH>0, isPrev:!!entry.prevention, prevH:round2(prevH),
+    altH:round2(altH), altStart:altH>0?minToHHMM(altStartMin):'', altEnd:altH>0?minToHHMM(altStartMin+Math.round(altH*60)):'',
     endDate, days:dayRows,
     totalH:round2(totalH), tnH:round2(tnH), erDayH:round2(erDayH), erNightH:round2(erNightH),
     contractDayH:round2(contractDayH),
@@ -870,7 +892,7 @@ function computeMonth(entries, ctx){
     const days=weeks[wk].slice().sort((a,b)=>a.date.localeCompare(b.date));
     const deficitIn=carryDeficit;
     const weekTarget=ctx.weeklyContract+deficitIn;
-    // Soma TODAS as horas normais (Rotina/Tarde/Extra/Bolsa/Folga) da semana
+    // Soma TODAS as horas normais (Rotina/Tarde/Bolsa/Folga) da semana
     // ANTES de processar os turnos de banco — assim o "espaço" que sobra para
     // contrato é fixo para a semana toda, e não depende de em que dia da
     // semana o turno de banco calha (só a ORDEM entre vários turnos de banco
@@ -884,7 +906,7 @@ function computeMonth(entries, ctx){
       // estatística semanal: usa TODOS os dias da semana (incl. fronteira),
       // para uma avaliação íntegra do cálculo — independente do resumo mensal.
       const regHDay=(r.allocations.find(a=>a.key==='RW')||{hours:0}).hours;
-      workedH+=regHDay+r.totalH; tnH+=r.tnH; erH+=(r.erDayH+r.erNightH); weekEur+=r.shiftEur;
+      workedH+=regHDay+r.totalH+r.altH; tnH+=r.tnH; erH+=(r.erDayH+r.erNightH); weekEur+=r.shiftEur;
       // Horas de banco (ER) feitas ao Sábado/Domingo — usadas na condição do
       // Art.5º do DL 119/2026 (independente de ser feriado: a lei fala só de
       // sábado/domingo, por isso usa-se o dia da semana real, não `kind`).
@@ -1320,20 +1342,18 @@ function priorAnchorLabel(){ const {y,m}=priorAnchorMonth(); return `${MONTHS_PT
 function showPrevMonths(){ const e=document.getElementById('chkShowPrev'); return !!(e&&e.checked); }
 function toggleShowPrev(){ buildCalendar(); }
 
-/* Linha de um dia: pré-preenchimento (dia útil -> Rotina; feriado em dia útil
-   -> Folga; fim de semana -> nada) com o que o utilizador guardou por cima.
+/* Linha de um dia: pré-preenchimento (dia útil -> Rotina; feriado e fim de
+   semana -> nada) com o que o utilizador guardou por cima.
    Usada pelo calendário e pelo cálculo do histórico. */
 /* Dedicação Plena: o dia a seguir a uma Urgência Noite (ou 24h) é dia de
    descanso — pré-preenche Bolsa de Horas em vez de Rotina. Só em dias ÚTEIS:
-   fins de semana ficam vazios e feriados ficam Folga, como sempre. */
+   fins de semana e feriados ficam vazios, como sempre. */
 function afterErNight(dateISO){
   const prev=(UI.entries||{})[iso(addDays(parseISO(dateISO),-1))];
   return !!prev && (prev.banco==='noite' || prev.banco==='h24');
 }
 function defaultWorkFor(date){
-  const dow=parseISO(date).getDay();
-  if(dow===0||dow===6) return '';                      // fim de semana
-  if(dayKind(date)==='holiday') return 'folga';        // feriado em dia útil
+  if(isRestDate(date)) return '';                      // fim de semana ou feriado
   if(currentRegime()==='plena' && afterErNight(date)) return 'bolsa';
   return 'rotina';
 }
@@ -1355,13 +1375,18 @@ function rowForDate(date, inMonth){
 
 /* Dias de fim de semana (sábado/domingo reais, mesmo que sejam feriado). */
 function isWeekendDate(dateISO){ const d=parseISO(dateISO).getDay(); return d===0||d===6; }
+/* Dias de descanso: fim de semana ou feriado — têm as mesmas opções (A, D, N, P). */
+function isRestDate(dateISO){ return isWeekendDate(dateISO)||isHoliday(dateISO); }
+/* Feriado num dia útil: abate PAYROLL_RULES.holidayContractCredit ao contrato. */
+function isWeekdayHoliday(dateISO){ return isHoliday(dateISO)&&!isWeekendDate(dateISO); }
 /* Que tipos de trabalho normal são oferecidos/aceites em cada dia:
-   dias úteis -> R/T/F/BH ; fins de semana -> só A (Alternativo). */
+   dias úteis -> R/T/F/BH ; fins de semana e feriados -> só A (Alternativo). */
 const WEEKDAY_WORK=['rotina','tarde','folga','bolsa'];
-const WEEKEND_WORK=['extra'];
-function allowedWorkTypes(dateISO){ return isWeekendDate(dateISO)?WEEKEND_WORK:WEEKDAY_WORK; }
+const REST_DAY_WORK=['extra'];
+function allowedWorkTypes(dateISO){ return isRestDate(dateISO)?REST_DAY_WORK:WEEKDAY_WORK; }
 
-/* Tipos de trabalho normal (consomem o contrato semanal, pagos pela base). */
+/* Tipos de trabalho normal (consomem o contrato semanal, pagos pela base),
+   exceto o Alternativo, que é sempre pago como extra. */
 const WORK_TYPES = {
   rotina: {label:'Rotina', hours:()=>rotinaHours()},
   tarde:  {label:'Tarde',  hours:()=>tardeHours()},
@@ -1510,9 +1535,7 @@ function buildCalendar(){
       let row=UI.rowByDate[date];
       if(!row){
         // pré-preenche (igual nos 3 modos): dia útil sem feriado -> Rotina;
-        // feriado NUM DIA ÚTIL -> Folga; qualquer fim de semana (sábado ou
-        // domingo, MESMO que seja feriado) -> nada (já é dia de descanso por
-        // ser fim de semana, marcar Folga aí seria redundante).
+        // feriado ou fim de semana -> nada.
         row = rowForDate(date, inThis);
         UI.manualRows.push(row); UI.rowByDate[date]=row;
       } else if(inThis){
@@ -1596,9 +1619,9 @@ function renderManualCalendar(){
   // vez de droplist — D+N ativos em simultâneo = Banco 24h.
   const bancoToggles=(date,sel,prev)=>{
     const isD=(sel==='dia'||sel==='h24'), isN=(sel==='noite'||sel==='h24');
-    // Prevenção só existe ao fim de semana. Coexiste com Banco Dia (janelas
-    // distintas); colide com N/24h, que já ocupam a noite.
-    const pBtn=isWeekendDate(date)
+    // Prevenção só existe ao fim de semana e em feriados. Coexiste com Banco
+    // Dia (janelas distintas); colide com N/24h, que já ocupam a noite.
+    const pBtn=isRestDate(date)
       ? `<button type="button" class="banco-btn banco-p${prev?' active':''}" data-t="p" title="Prevenção (20:00–08:00)">P</button>`
       : '';
     return `<div class="banco-toggles" data-d="${date}">
@@ -1696,30 +1719,33 @@ function renderManualCalendar(){
    usados nas validações por regime. */
 function collectEntries(){
   // r.hist = mês anterior mostrado só para edição — não pertence a este período.
-  return UI.manualRows.filter(r=>!r.hist && (r.work||r.banco||r.prev)).map(entryFromRow);
+  return UI.manualRows.filter(r=>!r.hist && rowCounts(r)).map(entryFromRow);
 }
+/* Um feriado em dia útil conta sempre, mesmo vazio: abate horas ao contrato. */
+function rowCounts(r){ return !!(r.work||r.banco||r.prev||isWeekdayHoliday(r.date)); }
 /* Uma linha do calendário -> uma entrada para o motor. */
 function entryFromRow(r){
   {
       // Urgência D (08:00–20:00) ou 24h sobrepõe-se ao horário diurno normal
       // -> ignora o trabalho normal desse dia (evita duplicar horas).
       const ignoresFromBanco = (r.banco==='dia'||r.banco==='h24');
-      // Rotina/Tarde/Bolsa de Horas não se aplicam a fins de semana (sábado
-      // OU domingo, mesmo que seja feriado) -- ignorados silenciosamente,
-      // tal como a Urgência D acima. Folga continua válida (dia de descanso
-      // explícito). Alternativo fica sem regra por agora (a decidir depois).
       // Cada dia só aceita os tipos oferecidos pela UI para esse dia
-      // (úteis: R/T/F/BH · fim de semana: A). Um valor fora disso — vindo de
-      // estado guardado antes desta regra — é ignorado silenciosamente.
+      // (úteis: R/T/F/BH · fim de semana e feriado: A). Um valor fora disso —
+      // vindo de estado guardado antes desta regra — é ignorado silenciosamente.
       const allowedWork = allowedWorkTypes(r.date).includes(r.work);
       const effectiveWork = (ignoresFromBanco||!allowedWork) ? '' : (r.work||'');
-      const regularHours = effectiveWork ? workHoursOf(effectiveWork) : 0;
+      // O Alternativo é sempre extra: fica fora das horas normais da semana.
+      const isAlternative = effectiveWork==='extra';
+      const alternativeHours = isAlternative ? workHoursOf('extra') : 0;
+      const holidayCredit = isWeekdayHoliday(r.date);
+      const regularHours = holidayCredit ? PAYROLL_RULES.holidayContractCredit.hours
+                         : (effectiveWork && !isAlternative) ? workHoursOf(effectiveWork) : 0;
       const b=BANCO_TYPES[r.banco];
-      // Prevenção: só ao fim de semana. Coexiste com Banco Dia (janelas
-      // distintas); a UI impede N/24h + P, que se sobreporiam à noite. A
-      // janela vem de PAYROLL_RULES.preventionWindow, não de start/end.
-      const isPrev = !!r.prev && isWeekendDate(r.date);
-      return {date:r.date, inMonth:(r.inMonth!==false), regularHours,
+      // Prevenção: só ao fim de semana e em feriados. Coexiste com Banco Dia
+      // (janelas distintas); a UI impede N/24h + P, que se sobreporiam à noite.
+      // A janela vem de PAYROLL_RULES.preventionWindow, não de start/end.
+      const isPrev = !!r.prev && isRestDate(r.date);
+      return {date:r.date, inMonth:(r.inMonth!==false), regularHours, alternativeHours, holidayCredit,
               er:!!b, prevention:isPrev,
               start:b?b.start:'', end:b?b.end:'',
               workType:effectiveWork, bancoType:r.banco||''};
@@ -1755,7 +1781,7 @@ function computeHistory(){
   const toISO=iso(addDays(parseISO(cutoff),-1));
   const rows=[]; let d=parseISO(fromISO); const end=parseISO(toISO);
   while(d<=end){ rows.push(rowForDate(iso(d), true)); d=addDays(d,1); }
-  const entries=rows.filter(r=>r.work||r.banco||r.prev).map(entryFromRow);
+  const entries=rows.filter(rowCounts).map(entryFromRow);
   if(!entries.length) return null;
   const ctx={dailyContractHours:dailyContractHours(), weeklyContract:currentWeekly(),
     hourly:erHourly(), initialDeficit:0, regime:currentRegime()};
@@ -2033,7 +2059,8 @@ function renderShifts(shifts){
     // Um dia pode ter turno E prevenção — mostra as duas janelas.
     const hTurno=(s.start&&s.end)?`${s.start}–${s.end}`:'';
     const hPrev=(s.prevH>0)?`${pw.start}–${pw.end} (prev.)`:'';
-    const hours=[hTurno,hPrev].filter(Boolean).join(' + ');
+    const hAlt=(s.altH>0)?`${s.altStart}–${s.altEnd} (A)`:'';
+    const hours=[hAlt,hTurno,hPrev].filter(Boolean).join(' + ');
     return `<b>${dates}</b><div class="small muted">${s.weekday}${hours?' · '+hours:''}</div>`+
       (s.holiday?`<div class="small" style="color:#fecaca">${s.holiday}</div>`:'')+
       `<div class="shifttot">${totH.toFixed(2)} h · ${eur(totE)}</div>`;
