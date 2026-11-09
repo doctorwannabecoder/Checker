@@ -23,6 +23,13 @@ const entriesB=[{date:'2026-05-11', inMonth:true, regularHours:0, er:true, start
 const resB=computeMonth(entriesB, ectx);
 assertEqual(resB.warnings.length, 0, 'turno de 30h nao gera avisos de duracao');
 
+// --- Rotina aceita 5,5h; so a Rotina tem esta opcao ---
+assert(document.getElementById('selRotinaH').innerHTML.includes('value="5.5"'), 'Rotina tem a opcao 5,5 h');
+assertEqual(document.getElementById('selTardeH').innerHTML.includes('value="5.5"'), false, 'Tarde nao tem 5,5 h');
+document.getElementById('selRotinaH').value='5.5';
+assertClose(rotinaHours(), 5.5, 0.001, 'Rotina de 5,5 h: valor nao arredondado');
+assertClose(workHoursOf('rotina'), 5.5, 0.001, 'Rotina de 5,5 h: horas usadas no calculo');
+
 // --- Urgencia (banco) ignora o trabalho normal do MESMO dia ---
 // NOTA: o mock de <select> nao interpreta "<option selected>" do innerHTML
 // (ao contrario de um browser real) -- por isso os campos de horas por tipo

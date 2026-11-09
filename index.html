@@ -1427,8 +1427,12 @@ function initSelectors(){
   sc.innerHTML=Object.entries(SALARY_TABLE).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
   fillRegimeOptions();
   // Rotina e Tarde: 4–8 h ; Extra: 1–10 h
-  const mk=(from,to,def)=>{let o='';for(let h=from;h<=to;h++)o+=`<option value="${h}" ${h===def?'selected':''}>${h} h</option>`;return o;};
-  document.getElementById('selRotinaH').innerHTML=mk(4,8,7);
+  const mk=(from,to,def,extra=[])=>{
+    const hs=[]; for(let h=from;h<=to;h++) hs.push(h);
+    return hs.concat(extra).sort((a,b)=>a-b)
+      .map(h=>`<option value="${h}" ${h===def?'selected':''}>${String(h).replace('.',',')} h</option>`).join('');
+  };
+  document.getElementById('selRotinaH').innerHTML=mk(4,8,7,[5.5]);
   document.getElementById('selTardeH').innerHTML=mk(4,8,6);
   document.getElementById('selExtraH').innerHTML=mk(1,10,4);
   document.getElementById('selBolsaH').innerHTML=mk(1,10,4);
